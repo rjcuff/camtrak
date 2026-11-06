@@ -1,14 +1,14 @@
 """
-tether_demo - track an object through a video or an image sequence.
+camtrak_demo - track an object through a video or an image sequence.
 
   Pick the target yourself (scrub to any frame, draw, move, resize):
-      python demo/tether_demo.py --source clip.mp4 --display
+      python demo/camtrak_demo.py --source clip.mp4 --display
 
   Pass the box, save results:
-      python demo/tether_demo.py --source clip.mp4 --bbox 469,409,26,38 --csv out.csv --output out.mp4
+      python demo/camtrak_demo.py --source clip.mp4 --bbox 469,409,26,38 --csv out.csv --output out.mp4
 
   Benchmark sequence (OTB / LaSOT folder): starts from the ground-truth box and scores itself:
-      python demo/tether_demo.py --source LaSOT/bird/bird-2 --display
+      python demo/camtrak_demo.py --source LaSOT/bird/bird-2 --display
 
 Keys while playing:
   space  pause / resume          s  pick the target again (any frame)
@@ -36,16 +36,16 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
 sys.path.insert(0, str(HERE))
-import tether as tt  # noqa: E402
+import camtrak as tt  # noqa: E402
 from logbook import Logbook  # noqa: E402
-from metrics import FrameRecord, describe, summarise  # noqa: E402
+from metrics import FrameRecord, describe, summarize  # noqa: E402
 from selector import select_target  # noqa: E402
 from sources import (CutDetector, FrameSource, find_groundtruth,  # noqa: E402
                      load_absent_flags, load_groundtruth)
 
-STATUS_COLOURS = {tt.TRACKING: (0, 220, 0), tt.COASTING: (0, 200, 255), tt.LOST: (0, 0, 255)}
-TRUTH_COLOUR = (255, 200, 0)
-WINDOW = "Tether"
+STATUS_COLORS = {tt.TRACKING: (0, 220, 0), tt.COASTING: (0, 200, 255), tt.LOST: (0, 0, 255)}
+TRUTH_COLOR = (255, 200, 0)
+WINDOW = "Camtrak"
 MAX_VIEW = (1280, 720)
 
 
@@ -60,7 +60,7 @@ def parse_bbox(text: str) -> tuple[float, float, float, float]:
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Track one object with Tether.")
+    p = argparse.ArgumentParser(description="Track one object with Camtrak.")
     p.add_argument("--source", required=True, type=Path, help="video file or image folder")
     p.add_argument("--bbox", type=parse_bbox, help="initial box x,y,w,h in pixels")
     p.add_argument("--start", type=int, default=0, help="frame index the --bbox refers to")
@@ -77,38 +77,38 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--output", type=Path, help="write an annotated video (mp4)")
     p.add_argument("--max-frames", type=int, default=0, help="stop after N frames (0 = all)")
     p.add_argument("--log-dir", type=Path, default=HERE.parent / "logs",
-                   help="where each run's log folder goes (default: tether/logs)")
+                   help="where each run's log folder goes (default: camtrak/logs)")
     p.add_argument("--no-log", action="store_true", help="do not save a log folder")
     p.add_argument("--no-ml", action="store_true",
                    help="correlation tracker only (no neural second opinion)")
     return p.parse_args(argv)
 
 
-def boxed(image: np.ndarray, box, colour=(0, 255, 255), text: str = "") -> np.ndarray:
+def boxed(image: np.ndarray, box, color=(0, 255, 255), text: str = "") -> np.ndarray:
     out = image.copy()
     x, y, w, h = (round(v) for v in box)
-    cv2.rectangle(out, (x, y), (x + w, y + h), colour, 2)
+    cv2.rectangle(out, (x, y), (x + w, y + h), color, 2)
     if text:
         cv2.putText(out, text, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
-        cv2.putText(out, text, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, colour, 2, cv2.LINE_AA)
+        cv2.putText(out, text, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
     return out
 
 
 def draw(frame: np.ndarray, r: tt.Result, index: int, ms: float, truth, banner: str) -> None:
     x, y, w, h = r.box
-    colour = STATUS_COLOURS.get(r.status, (255, 255, 255))
+    color = STATUS_COLORS.get(r.status, (255, 255, 255))
     if truth is not None:
         tx, ty, tw, th = truth
-        cv2.rectangle(frame, (round(tx), round(ty)), (round(tx + tw), round(ty + th)), TRUTH_COLOUR, 1)
+        cv2.rectangle(frame, (round(tx), round(ty)), (round(tx + tw), round(ty + th)), TRUTH_COLOR, 1)
     thickness = 1 if r.status == tt.LOST else 2
-    cv2.rectangle(frame, (round(x), round(y)), (round(x + w), round(y + h)), colour, thickness)
+    cv2.rectangle(frame, (round(x), round(y)), (round(x + w), round(y + h)), color, thickness)
 
     label = f"#{index}  {r.status_name}  conf {r.confidence:.2f}  {round(w)}x{round(h)}  {ms:.2f} ms"
     cv2.putText(frame, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
-    cv2.putText(frame, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, colour, 2, cv2.LINE_AA)
+    cv2.putText(frame, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
     bar_w = 200   # confidence bar
     cv2.rectangle(frame, (10, 40), (10 + bar_w, 52), (60, 60, 60), -1)
-    cv2.rectangle(frame, (10, 40), (10 + round(bar_w * r.confidence), 52), colour, -1)
+    cv2.rectangle(frame, (10, 40), (10 + round(bar_w * r.confidence), 52), color, -1)
     if banner:
         cv2.putText(frame, banner, (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
         cv2.putText(frame, banner, (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
@@ -134,7 +134,7 @@ def make_tracker(no_ml: bool):
     if not no_ml:
         try:
             return tt.MLTracker()
-        except (tt.TetherError, AttributeError) as exc:
+        except (tt.CamtrakError, AttributeError) as exc:
             print(f"note: ML second opinion unavailable ({exc}); using correlation only")
     return tt.Tracker()
 
@@ -168,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
 
     tracker = make_tracker(args.no_ml)
     tracker.lock(first, bbox)
-    print(f"Tether {tt.version()} [{'correlation + ML' if isinstance(tracker, tt.MLTracker) else 'correlation'}]: locked on {tuple(round(v, 1) for v in bbox)} at frame {index}"
+    print(f"Camtrak {tt.version()} [{'correlation + ML' if isinstance(tracker, tt.MLTracker) else 'correlation'}]: locked on {tuple(round(v, 1) for v in bbox)} at frame {index}"
           f" of {args.source}" + (f"  (ground truth: {gt_path})" if gt_path else ""))
     cuts = None if args.no_cut_detect else CutDetector()
     if cuts:
@@ -291,14 +291,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{processed} frames, {avg:.3f} ms/frame in tracker (~{summary['tracker_fps']} fps), "
           f"status: {counts}, scene cuts: {n_cuts}, re-picks: {n_relocks}")
     if records:
-        summary["scores"] = summarise(records)
+        summary["scores"] = summarize(records)
         print("scores vs ground truth:")
         print(describe(summary["scores"]))
     if args.json:
         args.json.write_text(json.dumps(summary, indent=2))
     if log:
-        log.close({**summary, "tether_version": tt.version(), "command": sys.argv})
-        print(f"\nLog saved to: {log.dir}\n(send this folder path to get the run analysed)")
+        log.close({**summary, "camtrak_version": tt.version(), "command": sys.argv})
+        print(f"\nLog saved to: {log.dir}\n(send this folder path to get the run analyzed)")
     return 0
 
 

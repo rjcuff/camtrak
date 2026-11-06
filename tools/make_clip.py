@@ -65,7 +65,7 @@ def main() -> int:
         raise SystemExit(f"cannot write {args.out}")
 
     truth_path = args.out.with_suffix(".truth.csv")
-    # Same boxes in the OTB format (x,y,w,h per line) so tether_demo --gt can score it.
+    # Same boxes in the OTB format (x,y,w,h per line) so camtrak_demo --gt can score it.
     gt_path = args.out.with_suffix(".groundtruth.txt")
     with open(truth_path, "w", newline="") as fh, open(gt_path, "w") as gt:
         rows = csv.writer(fh)

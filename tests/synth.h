@@ -9,7 +9,7 @@
 #ifndef TT_SYNTH_H
 #define TT_SYNTH_H
 
-#include "tether/tether.h"
+#include "camtrak/camtrak.h"
 
 typedef struct {
     int       w, h;          /* frame size */
@@ -21,7 +21,7 @@ typedef struct {
     uint8_t  *target;        /* tsz x tsz target texture */
     unsigned  rng;
     int       index;         /* index of the frame currently in `frame` */
-    tether_box truth;        /* ground truth for `frame` */
+    camtrak_box truth;        /* ground truth for `frame` */
     int       occ_start;     /* frames [occ_start, occ_end] hide the target; -1 = none */
     int       occ_end;
     int       occluded;      /* 1 if the target is hidden in `frame` */
@@ -34,6 +34,6 @@ void tt_synth_free(tt_synth *s);
 void tt_synth_set_occlusion(tt_synth *s, int start, int end);
 /* Render frame number `index` into s->frame and set s->truth. */
 void tt_synth_render(tt_synth *s, int index);
-tether_frame tt_synth_frame(const tt_synth *s);
+camtrak_frame tt_synth_frame(const tt_synth *s);
 
 #endif

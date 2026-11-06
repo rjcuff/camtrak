@@ -6,7 +6,7 @@ clips/
 __pycache__/
 *.pyc
 .venv/
-python/tether/*.dylib
-python/tether/*.so
-python/tether/*.dll
+python/camtrak/*.dylib
+python/camtrak/*.so
+python/camtrak/*.dll
 *.egg-info/

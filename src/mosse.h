@@ -1,9 +1,11 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 /*
  * mosse.h - MOSSE correlation filter (Bolme et al., CVPR 2010).
  *
  * The idea in one paragraph:
  *   We want a small filter h such that correlating it with the target patch f
- *   gives a sharp Gaussian peak g centred on the target:   f (*) h = g.
+ *   gives a sharp Gaussian peak g centered on the target:   f (*) h = g.
  *   Correlation is an element-wise product in the Fourier domain, so with
  *   capital letters for FFTs:   F . conj(H) = G   =>   conj(H) = G / F.
  *   Dividing by one noisy sample is unstable, so MOSSE takes the least-squares
@@ -41,7 +43,7 @@ void tt_mosse_reset(tt_mosse *m);
 void tt_mosse_add_sample(tt_mosse *m, const float *patch);
 void tt_mosse_finish_init(tt_mosse *m, float lambda_rel);
 
-/* Copy the learned filter (A, B, lambda) of `src` into `dst` (same size, both initialised). */
+/* Copy the learned filter (A, B, lambda) of `src` into `dst` (same size, both initialized). */
 void tt_mosse_copy_model(tt_mosse *dst, const tt_mosse *src);
 
 /* Online adaptation: A,B = (1-rate)*A,B + rate*(new sample). */

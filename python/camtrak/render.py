@@ -1,24 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md.
 """
-tether.render - Tether's on-screen look.
+camtrak.render - Camtrak's on-screen look.
 
-    r = Renderer(frame.shape, theme="tether")
+    r = Renderer(frame.shape, theme="camtrak")
     r.draw(img, targets, focus_id=3, status="6 tracked / auto / 60 fps", clean=frame)
 
 Design language
-  * Every target has its own colour (stable per ID), so many targets stay
+  * Every target has its own color (stable per ID), so many targets stay
     distinguishable at a glance.
-  * Box: a thin rounded outline with a small ring at the centre. Solid =
-    locked, dashed = coasting, grey dashed = searching. The focused target
+  * Box: a thin rounded outline with a small ring at the center. Solid =
+    locked, dashed = coasting, gray dashed = searching. The focused target
     gets four short "lock" ticks at the middle of each side.
-  * Tag: a short leader line (the tether) from the box corner to a pill with
-    the ID chip in the target's colour and its speed. Tags are placed so they
+  * Tag: a short leader line (the link) from the box corner to a pill with
+    the ID chip in the target's color and its speed. Tags are placed so they
     avoid each other and the boxes; in a crowd they shrink to just the chip.
   * Trail: fading dots along the recent path.
   * Focus card: the focused target magnified, with a reticle, its speed and
     a confidence bar, in whichever corner is free of targets.
-  * Status pill: the tether mark, wordmark and run stats, bottom left.
+  * Status pill: the camtrak mark, wordmark and run stats, bottom left.
 
-Themes: "tether" (default), "mono", "contrast", "light". Add your own with
+Themes: "camtrak" (default), "mono", "contrast", "light". Add your own with
 register_theme(). Sizes scale with the frame height.
 """
 from __future__ import annotations
@@ -46,18 +48,18 @@ def bgr_hex(c) -> str:
 @dataclass(frozen=True)
 class Theme:
     name: str
-    palette: tuple            # target colours, BGR; cycled by target ID
-    accent: tuple             # brand colour: wordmark, mark, hints
+    palette: tuple            # target colors, BGR; cycled by target ID
+    accent: tuple             # brand color: wordmark, mark, hints
     panel: tuple              # card / pill background
     panel_alpha: float
     text: tuple
     muted: tuple              # secondary text, searching targets
-    chip_text: tuple          # text on a coloured ID chip
+    chip_text: tuple          # text on a colored ID chip
     trails: bool = True
 
 
-TETHER_PALETTE = tuple(hex_bgr(h) for h in (
-    "#2EE6C5",   # tether teal
+CAMTRAK_PALETTE = tuple(hex_bgr(h) for h in (
+    "#2EE6C5",   # camtrak teal
     "#9B7BFF",   # violet
     "#FFB547",   # amber
     "#4CC3FF",   # sky
@@ -68,7 +70,7 @@ TETHER_PALETTE = tuple(hex_bgr(h) for h in (
 ))
 
 THEMES: dict[str, Theme] = {
-    "tether": Theme("tether", TETHER_PALETTE, hex_bgr("#2EE6C5"), hex_bgr("#0E1320"), 0.72,
+    "camtrak": Theme("camtrak", CAMTRAK_PALETTE, hex_bgr("#2EE6C5"), hex_bgr("#0E1320"), 0.72,
                     hex_bgr("#E8EEF7"), hex_bgr("#8A96AB"), hex_bgr("#0E1320")),
     "mono": Theme("mono", (hex_bgr("#2EE6C5"),), hex_bgr("#2EE6C5"), hex_bgr("#0E1320"), 0.65,
                   hex_bgr("#E8EEF7"), hex_bgr("#8A96AB"), hex_bgr("#0E1320"), trails=False),
@@ -87,15 +89,15 @@ def register_theme(theme: Theme) -> None:
 
 # --------------------------------------------------------------------- drawing primitives
 
-def _blend(img, x0, y0, x1, y1, colour, alpha, radius=0) -> None:
-    """Fill a (rounded) rectangle with `colour` at `alpha`, clipped to the image."""
+def _blend(img, x0, y0, x1, y1, color, alpha, radius=0) -> None:
+    """Fill a (rounded) rectangle with `color` at `alpha`, clipped to the image."""
     H, W = img.shape[:2]
     cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
     if cx1 <= cx0 or cy1 <= cy0:
         return
     roi = img[cy0:cy1, cx0:cx1]
     fill = np.empty_like(roi)
-    fill[:] = colour
+    fill[:] = color
     if radius > 0:
         mask = np.zeros((y1 - y0, x1 - x0), np.uint8)
         r = min(radius, (x1 - x0) // 2, (y1 - y0) // 2)
@@ -109,7 +111,7 @@ def _blend(img, x0, y0, x1, y1, colour, alpha, radius=0) -> None:
         cv2.addWeighted(fill, alpha, roi, 1 - alpha, 0, dst=roi)
 
 
-def _dashed_line(img, p0, p1, colour, thick, dash, gap) -> None:
+def _dashed_line(img, p0, p1, color, thick, dash, gap) -> None:
     length = float(np.hypot(p1[0] - p0[0], p1[1] - p0[1]))
     if length < 1:
         return
@@ -118,23 +120,23 @@ def _dashed_line(img, p0, p1, colour, thick, dash, gap) -> None:
     while s < length:
         e = min(length, s + dash)
         cv2.line(img, (round(p0[0] + dx * s), round(p0[1] + dy * s)),
-                 (round(p0[0] + dx * e), round(p0[1] + dy * e)), colour, thick, cv2.LINE_AA)
+                 (round(p0[0] + dx * e), round(p0[1] + dy * e)), color, thick, cv2.LINE_AA)
         s = e + gap
 
 
-def _rounded_outline(img, x0, y0, x1, y1, colour, thick, radius, dashed=False, dash=6) -> None:
+def _rounded_outline(img, x0, y0, x1, y1, color, thick, radius, dashed=False, dash=6) -> None:
     r = int(max(0, min(radius, (x1 - x0) // 2, (y1 - y0) // 2)))
     edges = (((x0 + r, y0), (x1 - r, y0)), ((x1, y0 + r), (x1, y1 - r)),
              ((x1 - r, y1), (x0 + r, y1)), ((x0, y1 - r), (x0, y0 + r)))
     for a, b in edges:
         if dashed:
-            _dashed_line(img, a, b, colour, thick, dash, dash * 0.8)
+            _dashed_line(img, a, b, color, thick, dash, dash * 0.8)
         else:
-            cv2.line(img, a, b, colour, thick, cv2.LINE_AA)
+            cv2.line(img, a, b, color, thick, cv2.LINE_AA)
     if r > 0:
         for (cx, cy), ang in (((x0 + r, y0 + r), 180), ((x1 - r, y0 + r), 270),
                               ((x1 - r, y1 - r), 0), ((x0 + r, y1 - r), 90)):
-            cv2.ellipse(img, (cx, cy), (r, r), ang, 0, 90, colour, thick, cv2.LINE_AA)
+            cv2.ellipse(img, (cx, cy), (r, r), ang, 0, 90, color, thick, cv2.LINE_AA)
 
 
 def _overlap(a, b) -> bool:
@@ -144,7 +146,7 @@ def _overlap(a, b) -> bool:
 # --------------------------------------------------------------------- renderer
 
 class Renderer:
-    def __init__(self, frame_shape, theme: str | Theme = "tether", *, labels: bool = True,
+    def __init__(self, frame_shape, theme: str | Theme = "camtrak", *, labels: bool = True,
                  focus_card: bool = True, trails: bool | None = None, status: bool = True) -> None:
         H, W = frame_shape[:2]
         self.W, self.H = W, H
@@ -159,18 +161,18 @@ class Renderer:
         self.thick = max(1, round(1.3 * self.u))
 
     # ----------------------------------------------------------------- helpers
-    def colour(self, target_id: int) -> tuple:
+    def color(self, target_id: int) -> tuple:
         p = self.theme.palette
         return p[(target_id - 1) % len(p)]
 
-    def colour_hex(self, target_id: int) -> str:
-        return bgr_hex(self.colour(target_id))
+    def color_hex(self, target_id: int) -> str:
+        return bgr_hex(self.color(target_id))
 
     def _px(self, v: float) -> int:
         return max(1, round(v * self.u))
 
-    def _text(self, img, s, org, colour, scale=1.0, font=FONT, thick=None) -> None:
-        cv2.putText(img, s, (round(org[0]), round(org[1])), font, self.font * scale, colour,
+    def _text(self, img, s, org, color, scale=1.0, font=FONT, thick=None) -> None:
+        cv2.putText(img, s, (round(org[0]), round(org[1])), font, self.font * scale, color,
                     thick or self.thick, cv2.LINE_AA)
 
     def _text_size(self, s, scale=1.0, font=FONT, thick=None):
@@ -178,7 +180,7 @@ class Renderer:
         return w, h, base
 
     # ----------------------------------------------------------------- target
-    def _box(self, img, t, colour, focused: bool) -> None:
+    def _box(self, img, t, color, focused: bool) -> None:
         x, y, w, h = t.box
         x0, y0, x1, y1 = round(x), round(y), round(x + w), round(y + h)
         r = max(2, min(self._px(7), round(min(w, h) / 4)))
@@ -187,23 +189,23 @@ class Renderer:
             _rounded_outline(img, x0, y0, x1, y1, self.theme.muted, max(1, thick - 1), r, dashed=True,
                              dash=self._px(4))
         else:
-            _rounded_outline(img, x0, y0, x1, y1, colour, thick, r, dashed=t.status == COASTING,
+            _rounded_outline(img, x0, y0, x1, y1, color, thick, r, dashed=t.status == COASTING,
                              dash=self._px(6))
         cx, cy = round(x + w / 2), round(y + h / 2)
-        cv2.circle(img, (cx, cy), self._px(2.5), colour if t.status != LOST else self.theme.muted,
+        cv2.circle(img, (cx, cy), self._px(2.5), color if t.status != LOST else self.theme.muted,
                    max(1, self.thick - 1), cv2.LINE_AA)
         if focused and t.status != LOST:
             k = self._px(6)
             for (px, py, dx, dy) in ((cx, y0, 0, -1), (cx, y1, 0, 1), (x0, cy, -1, 0), (x1, cy, 1, 0)):
-                cv2.line(img, (px, py), (px + dx * k, py + dy * k), colour, thick, cv2.LINE_AA)
+                cv2.line(img, (px, py), (px + dx * k, py + dy * k), color, thick, cv2.LINE_AA)
 
-    def _trail(self, img, t, colour) -> None:
+    def _trail(self, img, t, color) -> None:
         pts = list(t.trail)[:-1]                       # newest last; skip the current point
         for i, (px, py) in enumerate(pts[::-3][:12]):  # every 3rd, newest first, shrinking
             rad = max(1, round(self._px(2.2) * (1 - i / 14)))
-            cv2.circle(img, (round(px), round(py)), rad, colour, -1, cv2.LINE_AA)
+            cv2.circle(img, (round(px), round(py)), rad, color, -1, cv2.LINE_AA)
 
-    def _tag(self, img, t, colour, taken: list, compact: bool) -> None:
+    def _tag(self, img, t, color, taken: list, compact: bool) -> None:
         x, y, w, h = t.box
         chip = f"{t.id:02d}"
         info = "" if compact else (f"{round(t.speed)} px/s" if t.status == TRACKING
@@ -239,7 +241,7 @@ class Renderer:
         (ax, ay), rect, side = best
         taken.append(rect)
         x0, y0, x1, y1 = rect
-        line_c = colour if t.status != LOST else self.theme.muted
+        line_c = color if t.status != LOST else self.theme.muted
         # leader: from the box corner to the near edge of the tag
         ex = x0 if side > 0 else x1
         ey = (y0 + y1) // 2
@@ -254,7 +256,7 @@ class Renderer:
 
     # ----------------------------------------------------------------- focus card
     def _card(self, img, clean, t, targets) -> None:
-        colour = self.colour(t.id)
+        color = self.color(t.id)
         size = round(self.H * 0.24)
         head = self._px(26)
         foot = self._px(26)
@@ -275,7 +277,7 @@ class Renderer:
         chip = f"{t.id:02d}"
         w, h, _ = self._text_size(chip, thick=self.thick + 1)
         pad = self._px(5)
-        _blend(img, ox + cw - w - 3 * pad, oy + self._px(5), ox + cw - pad, oy + head - self._px(5), colour,
+        _blend(img, ox + cw - w - 3 * pad, oy + self._px(5), ox + cw - pad, oy + head - self._px(5), color,
                1.0, self._px(8))
         self._text(img, chip, (ox + cw - w - 2 * pad, oy + head - self._px(9)), self.theme.chip_text,
                    thick=self.thick + 1)
@@ -296,10 +298,10 @@ class Renderer:
         c = (ox + size // 2, zy + size // 2)
         rr = round(size * 0.34)
         gap = round(size * 0.08)
-        cv2.circle(img, c, rr, colour, self.thick, cv2.LINE_AA)
+        cv2.circle(img, c, rr, color, self.thick, cv2.LINE_AA)
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             cv2.line(img, (c[0] + dx * gap, c[1] + dy * gap), (c[0] + dx * (rr + self._px(8)),
-                     c[1] + dy * (rr + self._px(8))), colour, self.thick, cv2.LINE_AA)
+                     c[1] + dy * (rr + self._px(8))), color, self.thick, cv2.LINE_AA)
         # footer: speed, state, confidence bar
         fy = zy + size
         state = {TRACKING: "locked", COASTING: "coasting", LOST: "searching"}.get(t.status, "")
@@ -309,18 +311,18 @@ class Renderer:
         _blend(img, bx0, by0, bx1, by1, self.theme.muted, 0.5, self._px(3))
         fill = bx0 + round((bx1 - bx0) * max(0.0, min(1.0, t.confidence)))
         if fill > bx0 + 2:
-            _blend(img, bx0, by0, fill, by1, colour, 1.0, self._px(3))
+            _blend(img, bx0, by0, fill, by1, color, 1.0, self._px(3))
         sw = self._text_size(state, 0.8)[0]
         self._text(img, state, (bx0 - sw - self._px(8), fy + foot - self._px(9)), self.theme.muted, 0.8)
 
     # ----------------------------------------------------------------- brand
-    def _mark(self, img, centre, r) -> None:
-        """The tether mark: a ring with a short line to a small node."""
+    def _mark(self, img, center, r) -> None:
+        """The camtrak mark: a ring with a short line to a small node."""
         a = self.theme.accent
-        cv2.circle(img, centre, r, a, max(1, self.thick), cv2.LINE_AA)
-        cv2.circle(img, centre, max(1, r // 3), a, -1, cv2.LINE_AA)
-        n = (centre[0] + round(r * 1.6), centre[1] - round(r * 1.1))
-        cv2.line(img, (centre[0] + round(r * 0.7), centre[1] - round(r * 0.5)), n, a, max(1, self.thick - 1),
+        cv2.circle(img, center, r, a, max(1, self.thick), cv2.LINE_AA)
+        cv2.circle(img, center, max(1, r // 3), a, -1, cv2.LINE_AA)
+        n = (center[0] + round(r * 1.6), center[1] - round(r * 1.1))
+        cv2.line(img, (center[0] + round(r * 0.7), center[1] - round(r * 0.5)), n, a, max(1, self.thick - 1),
                  cv2.LINE_AA)
         cv2.circle(img, n, max(1, r // 3), a, -1, cv2.LINE_AA)
 
@@ -328,8 +330,8 @@ class Renderer:
         r = self._px(6 * scale)
         self._mark(img, (org[0] + r, org[1] - r), r)
         tx = org[0] + round(r * 3.2)
-        self._text(img, "tether", (tx, org[1]), self.theme.accent, 1.15 * scale, font=WORDMARK_FONT)
-        return tx + self._text_size("tether", 1.15 * scale, font=WORDMARK_FONT)[0]
+        self._text(img, "camtrak", (tx, org[1]), self.theme.accent, 1.15 * scale, font=WORDMARK_FONT)
+        return tx + self._text_size("camtrak", 1.15 * scale, font=WORDMARK_FONT)[0]
 
     def status(self, img, text: str) -> None:
         m = self._px(14)
@@ -337,14 +339,14 @@ class Renderer:
         y1 = self.H - m
         y0 = y1 - h
         tw = self._text_size(text)[0]
-        mark_w = self._px(14) * 3 + self._text_size("tether", 1.15, font=WORDMARK_FONT)[0]
+        mark_w = self._px(14) * 3 + self._text_size("camtrak", 1.15, font=WORDMARK_FONT)[0]
         x0, x1 = m, m + self._px(12) + mark_w + self._px(14) + tw + self._px(14)
         _blend(img, x0, y0, x1, y1, self.theme.panel, self.theme.panel_alpha, h // 2)
         end = self._wordmark(img, (x0 + self._px(12), y1 - self._px(10)))
         self._text(img, text, (end + self._px(14), y1 - self._px(10)), self.theme.muted)
 
     def hint(self, img, text: str) -> None:
-        """A one-line instruction pill, top centre."""
+        """A one-line instruction pill, top center."""
         tw, th, _ = self._text_size(text)
         pad = self._px(10)
         x0 = (self.W - tw) // 2 - pad
@@ -363,9 +365,9 @@ class Renderer:
         if self.theme.trails:
             for t in targets:
                 if t.status != LOST:
-                    self._trail(img, t, self.colour(t.id))
+                    self._trail(img, t, self.color(t.id))
         for t in targets:
-            self._box(img, t, self.colour(t.id), t.id == focus_id)
+            self._box(img, t, self.color(t.id), t.id == focus_id)
         if self.labels:
             taken = [(round(t.box[0]), round(t.box[1]), round(t.box[0] + t.box[2]), round(t.box[1] + t.box[3]))
                      for t in targets]
@@ -373,7 +375,7 @@ class Renderer:
             # focused and locked targets get the best spots
             order = sorted(targets, key=lambda t: (t.id != focus_id, t.status, t.id))
             for t in order:
-                self._tag(img, t, self.colour(t.id), taken, compact)
+                self._tag(img, t, self.color(t.id), taken, compact)
         focus = next((t for t in targets if t.id == focus_id), None)
         if self.focus_card and focus is not None:
             self._card(img, clean, focus, targets)

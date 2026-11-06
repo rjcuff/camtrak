@@ -4,10 +4,10 @@ smoothness - how smooth was a run? Reads a log folder's frames.csv.
     python tools/smoothness.py logs/20261105-230732_videoplayback_trimmed
 
 Within each shot (scene cuts split the video), over TRACKING frames:
-  jitter      centre acceleration: how far the box moved compared with the
+  jitter      center acceleration: how far the box moved compared with the
               move before (a steady glide scores ~0, a shaky box scores high), px
   size jumps  frames where width changed by more than 8% from the previous frame
-  jumps       frames where the centre moved more than half the box size at once
+  jumps       frames where the center moved more than half the box size at once
   flicker     status changes per 100 frames (TRACKING <-> COASTING <-> LOST)
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ def main() -> int:
     print(f"frames {n}, tracking {tracked} ({100 * tracked / n:.0f}%)")
     if accel:
         print(f"jitter      median {accel[len(accel) // 2]:.2f} px, 95th pct {accel[int(0.95 * len(accel))]:.2f} px")
-    print(f"size jumps  {size_jumps}   centre jumps {jumps}   flicker {100 * changes / n:.1f} per 100 frames")
+    print(f"size jumps  {size_jumps}   center jumps {jumps}   flicker {100 * changes / n:.1f} per 100 frames")
     return 0
 
 

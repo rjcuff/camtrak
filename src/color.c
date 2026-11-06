@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 #include "color.h"
 
 #include <math.h>
@@ -21,7 +23,7 @@
 #define TT_COLOR_SAMPLES 1500.0f
 
 /* 4 levels per channel: coarse on purpose, so lighting changes between
- * shots move colours less often into another bin. */
+ * shots move colors less often into another bin. */
 static int bin_of(const uint8_t *p)
 {
     return ((p[0] >> 6) << 4) | ((p[1] >> 6) << 2) | (p[2] >> 6);
@@ -33,11 +35,11 @@ static int clampi(int v, int lo, int hi)
 }
 
 /*
- * Normalised colour histogram of the rectangle centred on the box centre with
+ * Normalized color histogram of the rectangle centered on the box center with
  * size (fw * box.w, fh * box.h), leaving out the box itself if `ring` is set.
  * Returns 0 if no pixel was inside the frame.
  */
-static int region_hist(const tether_frame *f, tether_box box, float fw, float fh, int ring,
+static int region_hist(const camtrak_frame *f, camtrak_box box, float fw, float fh, int ring,
                        float *hist)
 {
     const float iw = box.w * fw, ih = box.h * fh;
@@ -72,12 +74,12 @@ static int region_hist(const tether_frame *f, tether_box box, float fw, float fh
     return 1;
 }
 
-static int inner_hist(const tether_frame *f, tether_box box, float *hist)
+static int inner_hist(const camtrak_frame *f, camtrak_box box, float *hist)
 {
     return region_hist(f, box, TT_COLOR_INNER_W, TT_COLOR_INNER_H, 0, hist);
 }
 
-/* Bhattacharyya coefficient: 1 = identical colour distributions, 0 = disjoint. */
+/* Bhattacharyya coefficient: 1 = identical color distributions, 0 = disjoint. */
 static float bhattacharyya(const float *a, const float *b)
 {
     float bc = 0.0f;
@@ -88,30 +90,30 @@ static float bhattacharyya(const float *a, const float *b)
     return bc;
 }
 
-float tt_color_contrast(const tether_frame *f, tether_box box)
+float tt_color_contrast(const camtrak_frame *f, camtrak_box box)
 {
     float inner[TT_COLOR_BINS], ring[TT_COLOR_BINS];
-    if (f->format != TETHER_FORMAT_BGR8 || !inner_hist(f, box, inner)
+    if (f->format != CAMTRAK_FORMAT_BGR8 || !inner_hist(f, box, inner)
         || !region_hist(f, box, TT_COLOR_RING, TT_COLOR_RING, 1, ring)) {
         return -1.0f;
     }
     return bhattacharyya(inner, ring);
 }
 
-void tt_color_learn(tt_color *c, const tether_frame *f, tether_box box)
+void tt_color_learn(tt_color *c, const camtrak_frame *f, camtrak_box box)
 {
     memset(c, 0, sizeof(*c));
-    if (f->format == TETHER_FORMAT_BGR8 && inner_hist(f, box, c->ref)) {
+    if (f->format == CAMTRAK_FORMAT_BGR8 && inner_hist(f, box, c->ref)) {
         c->enabled = 1;
         c->ref_contrast = tt_color_contrast(f, box);
     }
 }
 
-float tt_color_match(const tt_color *c, const tether_frame *f, tether_box box)
+float tt_color_match(const tt_color *c, const camtrak_frame *f, camtrak_box box)
 {
     float hist[TT_COLOR_BINS];
 
-    if (!c->enabled || f->format != TETHER_FORMAT_BGR8) {
+    if (!c->enabled || f->format != CAMTRAK_FORMAT_BGR8) {
         return -1.0f;
     }
     if (!inner_hist(f, box, hist)) {
@@ -120,11 +122,11 @@ float tt_color_match(const tt_color *c, const tether_frame *f, tether_box box)
     return bhattacharyya(hist, c->ref);
 }
 
-int tt_color_stands_out(const tt_color *c, const tether_frame *f, tether_box box)
+int tt_color_stands_out(const tt_color *c, const camtrak_frame *f, camtrak_box box)
 {
     float s;
-    if (!c->enabled || f->format != TETHER_FORMAT_BGR8) {
-        return 1;   /* no colour: cannot judge, do not veto */
+    if (!c->enabled || f->format != CAMTRAK_FORMAT_BGR8) {
+        return 1;   /* no color: cannot judge, do not veto */
     }
     s = tt_color_contrast(f, box);
     return s >= 0.0f && s <= fminf(TT_COLOR_BLEND_MAX, c->ref_contrast + TT_COLOR_BLEND_SLACK);

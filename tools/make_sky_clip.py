@@ -6,7 +6,7 @@ make_sky_clip - synthetic multi-target test video with known ground truth.
 A formation of small aircraft and some birds cross a hazy, cloudy sky
 above a tree line; the camera pans slowly; there is sensor noise and two
 objects cross paths. Writes clips/sky.truth.csv (frame,id,x,y,w,h) so
-tools/score_multi.py can score a tether_hud run.
+tools/score_multi.py can score a camtrak_hud run.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def background(rng) -> np.ndarray:
     return np.clip(sky, 0, 255).astype(np.uint8)
 
 
-def plane(size: int, colour) -> np.ndarray:
+def plane(size: int, color) -> np.ndarray:
     """A small swept-wing silhouette, pointing right; returns BGRA."""
     s = size
     img = np.zeros((s, s, 4), np.uint8)
@@ -54,7 +54,7 @@ def plane(size: int, colour) -> np.ndarray:
     wing2 = wing.copy(); wing2[:, 1] = s - wing2[:, 1]
     tail = np.array([[0.0, 0.5], [0.15, 0.5], [0.05, 0.25]]) * s
     for poly in (body, wing, wing2, tail):
-        cv2.fillPoly(img, [poly.astype(np.int32)], (*colour, 255), cv2.LINE_AA)
+        cv2.fillPoly(img, [poly.astype(np.int32)], (*color, 255), cv2.LINE_AA)
     return img
 
 

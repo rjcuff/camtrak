@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 /*
  * scale.h - DSST-style scale filter (Danelljan et al., BMVC 2014).
  *
@@ -24,11 +26,11 @@
 typedef struct {
     int    S;               /* number of scale samples (odd) */
     int    mw, mh, D;       /* model patch size, D = mw*mh */
-    float  step;            /* ratio between neighbouring scale samples (a) */
+    float  step;            /* ratio between neighboring scale samples (a) */
     float  rate;            /* learning rate */
     float  lambda;          /* regulariser, fixed after the first training */
     int    trained;
-    float *factors;         /* S: a^(n - centre) */
+    float *factors;         /* S: a^(n - center) */
     float *win;             /* S: Hann window along the scale axis */
     float *Gr, *Gi;         /* S: DFT of the desired 1D Gaussian */
     float *dft_c, *dft_s;   /* S*S: cos/sin(2*pi*k*n/S) */
@@ -44,12 +46,12 @@ typedef struct {
 int  tt_scale_init(tt_scale *s, float target_w, float target_h, int S, float step, float rate);
 void tt_scale_free(tt_scale *s);
 
-/* Learn the box (cx, cy, w, h) at all S sizes. First call initialises, later calls blend. */
-void tt_scale_train(tt_scale *s, const tether_frame *f, const tt_log_lut *lut,
+/* Learn the box (cx, cy, w, h) at all S sizes. First call initializes, later calls blend. */
+void tt_scale_train(tt_scale *s, const camtrak_frame *f, const tt_log_lut *lut,
                     float cx, float cy, float w, float h);
 
 /* Return the size change (multiply w and h by it) that best matches the model. */
-float tt_scale_detect(tt_scale *s, const tether_frame *f, const tt_log_lut *lut,
+float tt_scale_detect(tt_scale *s, const camtrak_frame *f, const tt_log_lut *lut,
                       float cx, float cy, float w, float h);
 
 #endif

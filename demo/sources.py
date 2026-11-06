@@ -21,7 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from tether.detect import CutDetector  # noqa: F401  (re-exported for the demos)
+from camtrak.detect import CutDetector  # noqa: F401  (re-exported for the demos)
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
 GT_NAMES = ("groundtruth_rect.txt", "groundtruth.txt", "groundtruth_rect.1.txt")

@@ -1,10 +1,10 @@
 """
-score - compare a tether_demo CSV against a make_clip ground-truth CSV.
+score - compare a camtrak_demo CSV against a make_clip ground-truth CSV.
 
     python tools/score.py clips/track.csv clips/synthetic.truth.csv
 
 Splits the clip into before / during / after the occlusion and reports
-centre error, precision at 20 px, the status mix and PSR range in each part.
+center error, precision at 20 px, the status mix and PSR range in each part.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def load(path: str) -> list[dict[str, str]]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Score a Tether run against ground truth.")
+    ap = argparse.ArgumentParser(description="Score a Camtrak run against ground truth.")
     ap.add_argument("track")
     ap.add_argument("truth")
     args = ap.parse_args()

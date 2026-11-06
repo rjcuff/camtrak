@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 #include "scale.h"
 
 #include <math.h>
@@ -86,8 +88,8 @@ void tt_scale_free(tt_scale *s)
     memset(s, 0, sizeof(*s));
 }
 
-/* Cut the box at all S sizes into X (one row per pixel), each cut normalised. */
-static void sample_scales(tt_scale *s, const tether_frame *f, const tt_log_lut *lut,
+/* Cut the box at all S sizes into X (one row per pixel), each cut normalized. */
+static void sample_scales(tt_scale *s, const camtrak_frame *f, const tt_log_lut *lut,
                           float cx, float cy, float w, float h)
 {
     const int S = s->S, D = s->D;
@@ -134,7 +136,7 @@ static void dft_rows(tt_scale *s)
     }
 }
 
-void tt_scale_train(tt_scale *s, const tether_frame *f, const tt_log_lut *lut,
+void tt_scale_train(tt_scale *s, const camtrak_frame *f, const tt_log_lut *lut,
                     float cx, float cy, float w, float h)
 {
     const int S = s->S;
@@ -168,7 +170,7 @@ void tt_scale_train(tt_scale *s, const tether_frame *f, const tt_log_lut *lut,
     }
 }
 
-float tt_scale_detect(tt_scale *s, const tether_frame *f, const tt_log_lut *lut,
+float tt_scale_detect(tt_scale *s, const camtrak_frame *f, const tt_log_lut *lut,
                       float cx, float cy, float w, float h)
 {
     const int S = s->S, c = S / 2;

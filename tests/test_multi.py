@@ -23,8 +23,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "python")]
-import tether as tt  # noqa: E402
-from tether.detect import snap_box  # noqa: E402
+import camtrak as tt  # noqa: E402
+from camtrak.detect import snap_box  # noqa: E402
 
 
 def run(*args: str) -> str:
@@ -59,7 +59,7 @@ def main() -> int:
 
         # auto mode
         auto_csv = Path(tmp) / "auto.csv"
-        run("demo/tether_hud.py", "--source", str(clip), "--auto", "--csv", str(auto_csv))
+        run("demo/camtrak_hud.py", "--source", str(clip), "--auto", "--csv", str(auto_csv))
         s = score(truth, auto_csv)
         check("auto coverage", s["coverage"] >= 95, f"{s['coverage']}% of object-frames (>= 95)")
         check("auto false", s["false"] <= 3, f"{s['false']}% of track-frames (<= 3)")
@@ -70,7 +70,7 @@ def main() -> int:
         ground = Path(tmp) / "ground.mp4"
         run("tools/make_ground_clip.py", str(ground))
         g_csv = Path(tmp) / "ground_run.csv"
-        run("demo/tether_hud.py", "--source", str(ground), "--auto", "--csv", str(g_csv))
+        run("demo/camtrak_hud.py", "--source", str(ground), "--auto", "--csv", str(g_csv))
         g = score(ground.with_suffix(".truth.csv"), g_csv)
         check("ground coverage", g["coverage"] >= 75, f"{g['coverage']}% of object-frames (>= 75)")
         check("ground false", g["false"] <= 40, f"{g['false']}% of track-frames (<= 40)")
@@ -83,16 +83,16 @@ def main() -> int:
         errs, ratios = [], []
         for r in rows:
             x, y, w, h = (float(r[k]) for k in "xywh")
-            b = snap_box(frame, x + w / 2 + 2, y + h / 2 + 1)      # slightly off-centre click
+            b = snap_box(frame, x + w / 2 + 2, y + h / 2 + 1)      # slightly off-center click
             errs.append(np.hypot(b[0] + b[2] / 2 - x - w / 2, b[1] + b[3] / 2 - y - h / 2))
             ratios.append(b[2] * b[3] / (w * h))
-        check("snap centre", max(errs) <= 3, f"worst centre error {max(errs):.1f} px (<= 3)")
+        check("snap center", max(errs) <= 3, f"worst center error {max(errs):.1f} px (<= 3)")
         check("snap size", 0.8 <= min(ratios) and max(ratios) <= 3.5,
               f"box area / object area {min(ratios):.2f}..{max(ratios):.2f}")
 
         pts = [f"{float(r['x']) + float(r['w']) / 2:.0f},{float(r['y']) + float(r['h']) / 2:.0f}" for r in rows]
         pts_csv = Path(tmp) / "pts.csv"
-        run("demo/tether_hud.py", "--source", str(clip), "--no-ml", "--csv", str(pts_csv),
+        run("demo/camtrak_hud.py", "--source", str(clip), "--no-ml", "--csv", str(pts_csv),
             *[a for p in pts for a in ("--point", p)])
         s = score(truth, pts_csv)
         held = s["coverage"] / (100 * len(rows) / 10)   # 10 objects in the clip, len(rows) clicked

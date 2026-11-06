@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md.
 """
-tether.detect - find objects without the user drawing a box.
+camtrak.detect - find objects without the user drawing a box.
 
 snap_box(frame, x, y)
     Click-to-lock. Finds the object under (or next to) a click and returns a
-    box around it: the pixels that differ from the local background (colour
-    distance from the median colour around the click), the connected blob
+    box around it: the pixels that differ from the local background (color
+    distance from the median color around the click), the connected blob
     nearest the click. Works for a jet in the sky, a skier on snow, a car on
     tarmac. Falls back to a fixed square if nothing stands out.
 
@@ -16,7 +18,7 @@ BlobDetector
     becomes a target after it is seen again, close by, on a later pass.
 
 CutDetector
-    Flags hard cuts in edited video (colour histogram jump).
+    Flags hard cuts in edited video (color histogram jump).
 
 GlobalMotion / MotionDetector / AutoDetector
     Camera-motion estimate (features + RANSAC affine), and a detector for
@@ -49,14 +51,14 @@ def _pad(box: Box, frac: float, min_side: float, shape) -> Box:
     return (x0, y0, x1 - x0, y1 - y0)
 
 
-def _ring_colours(win: np.ndarray, k: int = 5) -> np.ndarray:
-    """The main colours on the window's border (the local background), k-means."""
+def _ring_colors(win: np.ndarray, k: int = 5) -> np.ndarray:
+    """The main colors on the window's border (the local background), k-means."""
     ring = np.concatenate([win[0], win[-1], win[:, 0], win[:, -1]]).reshape(-1, win.shape[2])
     ring = np.ascontiguousarray(ring, np.float32)
     k = min(k, len(ring))
     crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-    _, _, centres = cv2.kmeans(ring, k, None, crit, 1, cv2.KMEANS_PP_CENTERS)
-    return centres
+    _, _, centers = cv2.kmeans(ring, k, None, crit, 1, cv2.KMEANS_PP_CENTERS)
+    return centers
 
 
 def snap_box(frame: np.ndarray, x: float, y: float, *, min_side: float = 12,
@@ -65,7 +67,7 @@ def snap_box(frame: np.ndarray, x: float, y: float, *, min_side: float = 12,
     Box around the object at (x, y). Never fails; worst case a fixed square.
 
     A square window around the click grows until the object fits inside it.
-    Its border is the local background, summarised as a few colours (so
+    Its border is the local background, summarized as a few colors (so
     tarmac, lane paint and shadow all count as background); pixels unlike
     every one of them are the object. The blob under the click wins, else
     the nearest one.
@@ -83,8 +85,8 @@ def snap_box(frame: np.ndarray, x: float, y: float, *, min_side: float = 12,
         if ww < 8 or wh < 8:
             break
         win = lab[y0:y1, x0:x1]
-        centres = _ring_colours(win)
-        dist = np.min(np.stack([np.sqrt(((win - c) ** 2).sum(axis=2)) for c in centres]), axis=0)
+        centers = _ring_colors(win)
+        dist = np.min(np.stack([np.sqrt(((win - c) ** 2).sum(axis=2)) for c in centers]), axis=0)
         ring_d = np.concatenate([dist[0], dist[-1], dist[:, 0], dist[:, -1]])
         thr = max(14.0, float(np.percentile(ring_d, 98)) + 10.0)
         mask = (dist > thr).astype(np.uint8)
@@ -170,14 +172,14 @@ class BlobDetector:
         small = cv2.resize(gray, None, fx=s, fy=s, interpolation=cv2.INTER_AREA) if s < 1 else gray
         k = max(7, int(self.max_size * 0.6) | 1)
         # background = median over a window larger than the objects; unlike a
-        # morphological closing it does not bridge neighbouring objects
+        # morphological closing it does not bridge neighboring objects
         bg = cv2.medianBlur(small, k)
         resp = cv2.absdiff(small, bg).astype(np.float32)
         med = float(np.median(resp))
         mad = float(np.median(np.abs(resp - med))) * 1.4826 + 1.0
         thr = max(14.0, med + self.sensitivity * mad)
         mask = (resp > thr).astype(np.uint8)
-        # busy-ness map: share of strong-ish pixels in a neighbourhood
+        # busy-ness map: share of strong-ish pixels in a neighborhood
         busy = cv2.blur((resp > thr * 0.5).astype(np.float32), (k * 3, k * 3))
         n, _, stats, cents = cv2.connectedComponentsWithStats(mask, connectivity=8)
         boxes: list[Box] = []
@@ -243,7 +245,7 @@ class GlobalMotion:
         self.min_features = min_features
         self.min_inlier_ratio = min_inlier_ratio
         self.scale = 1.0
-        self.gray: np.ndarray | None = None      # last frame, small grey
+        self.gray: np.ndarray | None = None      # last frame, small gray
         self._prev: np.ndarray | None = None
 
     def reset(self) -> None:
@@ -278,7 +280,7 @@ class GlobalMotion:
 class MotionDetector:
     """
     Finds objects that move relative to the scene, with the camera's own
-    motion cancelled. Feed every frame with push(); call detect() any time.
+    motion canceled. Feed every frame with push(); call detect() any time.
 
     The current frame is compared with the frames `gap` and `2*gap` back,
     each first warped onto the current view. A mover differs from both at its
@@ -291,11 +293,11 @@ class MotionDetector:
     def __init__(self, *, gap: int = 4, threshold: float = 18.0, min_size: int = 3,
                  max_frac: float = 0.15, max_moving: float = 0.03) -> None:
         self.gap = gap
-        self.threshold = threshold        # grey levels
+        self.threshold = threshold        # gray levels
         self.min_size = min_size          # px at work resolution
         self.max_frac = max_frac          # largest blob, fraction of the frame side
         self.max_moving = max_moving      # more of the frame "moving" than this = bad alignment
-        self._hist: deque = deque(maxlen=2 * gap + 1)   # (small grey, camera from previous, small)
+        self._hist: deque = deque(maxlen=2 * gap + 1)   # (small gray, camera from previous, small)
 
     def reset(self) -> None:
         self._hist.clear()
@@ -403,9 +405,9 @@ class AutoDetector:
         return any(np.hypot(cx - p[0], cy - p[1]) < max(p[2], 12) for p in self._scenery)
 
     @staticmethod
-    def _centre(frame: np.ndarray, box: Box) -> Box:
+    def _center(frame: np.ndarray, box: Box) -> Box:
         """A motion blob mostly covers the leading edge of a mover. Re-box the
-        object found at the blob's centre, if that is a sensible object box."""
+        object found at the blob's center, if that is a sensible object box."""
         x, y, w, h = box
         s = snap_box(frame, x + w / 2, y + h / 2, max_half=int(max(w, h) * 2) + 20)
         cx, cy = x + w / 2, y + h / 2
@@ -428,7 +430,7 @@ class AutoDetector:
                 prev = []
             for b, (cx, cy, size) in zip(boxes, now):
                 if any(np.hypot(cx - px, cy - py) <= max(40.0, size) for px, py, _ in prev):
-                    out.append(self._centre(frame, b))
+                    out.append(self._center(frame, b))
             self._prev_motion = now
         self._since_pass = np.eye(3)[:2]
         # merge overlapping candidates from the two detectors, drop known scenery
@@ -445,7 +447,7 @@ class AutoDetector:
 
 class CutDetector:
     """
-    Flags hard cuts in edited video: a big jump in the colour histogram between
+    Flags hard cuts in edited video: a big jump in the color histogram between
     consecutive frames. Works on a 160 px wide thumbnail, so it is cheap at any
     resolution. Threshold tuned on drone ski footage (cuts scored 0.27-0.84).
     """

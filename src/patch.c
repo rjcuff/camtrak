@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 #include "patch.h"
 
 #include <math.h>
@@ -5,12 +7,12 @@
 
 static const double TT_PI = 3.14159265358979323846;
 
-int tt_frame_valid(const tether_frame *f)
+int tt_frame_valid(const camtrak_frame *f)
 {
     if (!f || !f->data || f->width <= 0 || f->height <= 0) {
         return 0;
     }
-    if (f->format != TETHER_FORMAT_GRAY8 && f->format != TETHER_FORMAT_BGR8) {
+    if (f->format != CAMTRAK_FORMAT_GRAY8 && f->format != CAMTRAK_FORMAT_BGR8) {
         return 0;
     }
     return f->stride >= f->width * (int)f->format;
@@ -30,7 +32,7 @@ void tt_make_log_lut(tt_log_lut *lut)
 }
 
 /* log(1 + gray) of integer pixel (x, y), clamped to the image. */
-static inline float logval_at(const tether_frame *f, const tt_log_lut *lut, int x, int y)
+static inline float logval_at(const camtrak_frame *f, const tt_log_lut *lut, int x, int y)
 {
     const uint8_t *p;
     if (x < 0) x = 0;
@@ -38,7 +40,7 @@ static inline float logval_at(const tether_frame *f, const tt_log_lut *lut, int 
     if (x >= f->width)  x = f->width - 1;
     if (y >= f->height) y = f->height - 1;
     p = f->data + (size_t)y * (size_t)f->stride + (size_t)x * (size_t)f->format;
-    if (f->format == TETHER_FORMAT_GRAY8) {
+    if (f->format == CAMTRAK_FORMAT_GRAY8) {
         return lut->v[p[0]];
     }
     {
@@ -49,8 +51,8 @@ static inline float logval_at(const tether_frame *f, const tt_log_lut *lut, int 
     }
 }
 
-/* Bilinear sample at continuous point (px, py). Pixel centres sit at i + 0.5. */
-static inline float sample_bilinear(const tether_frame *f, const tt_log_lut *lut,
+/* Bilinear sample at continuous point (px, py). Pixel centers sit at i + 0.5. */
+static inline float sample_bilinear(const camtrak_frame *f, const tt_log_lut *lut,
                                     float px, float py)
 {
     float fx = px - 0.5f;
@@ -74,7 +76,7 @@ static inline float sample_bilinear(const tether_frame *f, const tt_log_lut *lut
     return (1.0f - ay) * top + ay * bot;
 }
 
-void tt_sample_patch(const tether_frame *f, const tt_log_lut *lut, float cx, float cy,
+void tt_sample_patch(const camtrak_frame *f, const tt_log_lut *lut, float cx, float cy,
                      float step, float angle, int w, int h, float *out)
 {
     const float ca = cosf(angle) * step;
@@ -113,7 +115,7 @@ void tt_preprocess(float *p, const float *win, int n)
     /* Mean and spread are weighted by the cosine window, i.e. measured mostly
      * on the target in the middle. Unweighted, a slightly bigger search region
      * (more plain background) would lower the spread, boost the target after
-     * normalising, and bias the scale search towards ever-bigger boxes. */
+     * normalizing, and bias the scale search towards ever-bigger boxes. */
     for (i = 0; i < n; i++) {
         sum += (double)win[i] * p[i];
         wsum += win[i];
@@ -160,7 +162,7 @@ static void stats_finish(const tt_stats3 *s, double mu[3], double cov[3][3])
     }
 }
 
-static const uint8_t *pixel(const tether_frame *f, int x, int y)
+static const uint8_t *pixel(const camtrak_frame *f, int x, int y)
 {
     return f->data + (size_t)y * (size_t)f->stride + (size_t)x * 3u;
 }
@@ -178,12 +180,12 @@ static double fisher(const double w[3], const double d[3], double S[3][3])
     return den > 1e-9 ? num * num / den : 0.0;
 }
 
-float tt_choose_channel(const tether_frame *f, float cx, float cy, float w, float h,
+float tt_choose_channel(const camtrak_frame *f, float cx, float cy, float w, float h,
                         tt_log_lut *lut)
 {
     /* blends tried: share of the discriminant direction (0 = pure luma) */
     static const double k_mix[] = { 0.0, 0.35, 0.7 };
-    /* a colour projection must separate this much better than luma to be used */
+    /* a color projection must separate this much better than luma to be used */
     const double k_gain_needed = 1.5;
     const double luma[3] = { 0.114, 0.587, 0.299 };
     tt_stats3 st = { 0 }, sb = { 0 };
@@ -192,7 +194,7 @@ float tt_choose_channel(const tether_frame *f, float cx, float cy, float w, floa
     int i, j, k, n = 24;
 
     tt_make_log_lut(lut);
-    if (f->format != TETHER_FORMAT_BGR8 || w < 2.0f || h < 2.0f) {
+    if (f->format != CAMTRAK_FORMAT_BGR8 || w < 2.0f || h < 2.0f) {
         return 1.0f;
     }
     /* target: central 70% of the box; background: a ring from 1.3x to 2.2x the box */
@@ -276,7 +278,7 @@ float tt_choose_channel(const tether_frame *f, float cx, float cy, float w, floa
     if (best_j <= j_luma) {
         return 1.0f;                    /* luma is as good: keep it */
     }
-    /* stretch the projection over the colours actually seen (+50% margin) */
+    /* stretch the projection over the colors actually seen (+50% margin) */
     {
         const double cands[2][3] = { { mt[0], mt[1], mt[2] }, { mb[0], mb[1], mb[2] } };
         const double *covs[2] = { &ct[0][0], &cb[0][0] };

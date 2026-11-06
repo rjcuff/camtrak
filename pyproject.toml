@@ -3,24 +3,42 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tether-tracker"
+name = "camtrak"
 version = "0.4.0"
 description = "Fast CPU multi-object visual tracker: C core, Python API, auto-detect and a themeable HUD"
 readme = "README.md"
 requires-python = ">=3.9"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Ryan Cuff", email = "ryan.cuff@icloud.com" }]
+keywords = ["object tracking", "computer vision", "multi-object tracking", "drone", "video", "opencv"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Multimedia :: Video",
+]
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
-# Pipeline, auto-detect, the HUD, the ML second opinion and the `tether` app need OpenCV
+# Pipeline, auto-detect, the HUD, the ML second opinion and the `camtrak` app need OpenCV
 vision = ["opencv-python>=4.9"]
 
+[project.urls]
+Homepage = "https://camtrak.dev"
+Source = "https://github.com/rjcuff/camtrak"
+Issues = "https://github.com/rjcuff/camtrak/issues"
+
 [project.scripts]
-tether = "tether.cli:main"
+camtrak = "camtrak.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "python" }
-packages = ["tether"]
+packages = ["camtrak"]
 
 [tool.setuptools.package-data]
 # the compiled core, copied here by build.sh / build.bat
-tether = ["*.dylib", "*.so", "*.dll"]
+camtrak = ["*.dylib", "*.so", "*.dll"]

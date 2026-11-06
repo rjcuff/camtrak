@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 #include "kalman.h"
 
 /* Velocity is unknown at lock: start with a large variance (std 5 px/frame). */

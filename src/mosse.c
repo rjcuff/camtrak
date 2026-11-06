@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 #include "mosse.h"
 
 #include <math.h>
@@ -28,8 +30,8 @@ int tt_mosse_init(tt_mosse *m, int w, int h, float sigma, float rate)
         return -1;
     }
 
-    /* Desired output: a Gaussian centred at patch pixel (w/2, h/2), which is
-     * where tt_sample_patch puts the target centre. */
+    /* Desired output: a Gaussian centered at patch pixel (w/2, h/2), which is
+     * where tt_sample_patch puts the target center. */
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
             const float dx = (float)(x - w / 2);
@@ -191,8 +193,8 @@ void tt_mosse_respond2(tt_mosse *m, const float *pa, const float *pb, float *ra,
 }
 
 /*
- * Sub-pixel refinement: fit a parabola through the peak and its two neighbours
- * (left, centre, right) and return where that parabola is highest, as an
+ * Sub-pixel refinement: fit a parabola through the peak and its two neighbors
+ * (left, center, right) and return where that parabola is highest, as an
  * offset in [-0.5, 0.5]. Done separately in x and y.
  */
 static float parabola_offset(float l, float c, float r)
@@ -259,7 +261,7 @@ tt_peak tt_mosse_find_peak(const float *r, int w, int h)
     p.iy = best / w;
     p.value = r[best];
 
-    /* The response is periodic (FFT), so neighbours wrap around the edges. */
+    /* The response is periodic (FFT), so neighbors wrap around the edges. */
     p.x = (float)p.ix + parabola_offset(r[p.iy * w + (p.ix - 1 + w) % w], r[best],
                                         r[p.iy * w + (p.ix + 1) % w]);
     p.y = (float)p.iy + parabola_offset(r[((p.iy - 1 + h) % h) * w + p.ix], r[best],

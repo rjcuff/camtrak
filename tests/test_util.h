@@ -15,7 +15,7 @@ static int tt_failures = 0;
         }                                                                    \
     } while (0)
 
-static double tt_now_ms(void)
+static inline double tt_now_ms(void)
 {
     struct timespec ts;
     timespec_get(&ts, TIME_UTC);

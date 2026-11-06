@@ -1,25 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md.
 """
-tether.ml - Tether + a small neural tracker as a "second opinion".
+camtrak.ml - Camtrak + a small neural tracker as a "second opinion".
 
-    import tether as tt
+    import camtrak as tt
     trk = tt.MLTracker()                 # uses models/vittrack.onnx
     trk.lock(frame, (x, y, w, h))
     r = trk.update(frame)                # same Result as tt.Tracker
     trk.last_info                        # what the ML side did this frame
 
 How the two cooperate:
-  * Tether (correlation filter, ~0.6 ms) is the primary tracker and the judge
+  * Camtrak (correlation filter, ~0.6 ms) is the primary tracker and the judge
     of honesty: it knows when it has lost the target.
-  * VitTrack (~4 ms, OpenCV Zoo, Apache 2.0) runs alongside. It recognises the
+  * VitTrack (~4 ms, OpenCV Zoo, Apache 2.0) runs alongside. It recognizes the
     target from deep features, so it copes better with big appearance changes
     and scene cuts, but it never admits it is lost and can drift.
-  * While Tether is confident, it keeps VitTrack on the right object
-    (re-initialising it when the two disagree, and periodically so VitTrack
+  * While Camtrak is confident, it keeps VitTrack on the right object
+    (re-initializing it when the two disagree, and periodically so VitTrack
     knows the latest look of the target).
-  * While Tether is COASTING or LOST, VitTrack's box is a candidate. It is
-    accepted only if it is plausible (sane size, inside the frame) and Tether's
-    own appearance models agree with it (tether_verify PSR >= verify_psr).
-    Then Tether is moved there (tether_reacquire) and carries on.
+  * While Camtrak is COASTING or LOST, VitTrack's box is a candidate. It is
+    accepted only if it is plausible (sane size, inside the frame) and Camtrak's
+    own appearance models agree with it (camtrak_verify PSR >= verify_psr).
+    Then Camtrak is moved there (camtrak_reacquire) and carries on.
 
 Requires OpenCV >= 4.9 (cv2.TrackerVit). The pure-C core does not.
 """
@@ -29,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import LOST, TRACKING, Result, Tracker, TetherError
+from . import LOST, TRACKING, Result, Tracker, CamtrakError
 
 DEFAULT_MODEL = Path(__file__).resolve().parent.parent.parent / "models" / "vittrack.onnx"
 
@@ -51,7 +53,7 @@ class MLTracker:
 
         path = Path(model_path) if model_path else DEFAULT_MODEL
         if not path.is_file():
-            raise TetherError(f"ML model not found: {path}")
+            raise CamtrakError(f"ML model not found: {path}")
         self._cv2 = cv2
         self._model = str(path)
         self.verify_psr = verify_psr
@@ -62,7 +64,7 @@ class MLTracker:
         self._vit = None
         self._since_sync = 0
         self._rejections = 0
-        self._good: tuple[np.ndarray, tuple] | None = None   # last view Tether confirmed
+        self._good: tuple[np.ndarray, tuple] | None = None   # last view Camtrak confirmed
         self._good_crop = None
         self._sweep_i = 0
         self.last_info: dict = {}
@@ -119,9 +121,9 @@ class MLTracker:
         ok, b = probe.update(frame)
         return ok, tuple(float(v) for v in b), float(probe.getTrackingScore()), probe
 
-    def _tether_shaped(self, box) -> tuple:
+    def _camtrak_shaped(self, box) -> tuple:
         """The ML box's position and area, but the shape of the user's box,
-        exactly as tether_reacquire sizes it, so the box never changes shape."""
+        exactly as camtrak_reacquire sizes it, so the box never changes shape."""
         x, y, w, h = box
         area = w * h
         bw = (area * self._aspect) ** 0.5
@@ -158,7 +160,7 @@ class MLTracker:
                 "verify_psr": None, "action": ""}
 
         if r.status == TRACKING and r.confidence >= 0.8:
-            # Tether is sure: keep the ML tracker on the same object.
+            # Camtrak is sure: keep the ML tracker on the same object.
             self._rejections = 0
             if not ok or _iou(vbox, r.box) < 0.3 or self._since_sync >= self.resync_every:
                 info["action"] = "ml_resync" if self._since_sync < self.resync_every else "ml_refresh"
@@ -166,12 +168,12 @@ class MLTracker:
                 self._remember_good(frame, r.box)
         elif r.status != TRACKING and ok and vscore >= self.ml_min_score \
                 and self._plausible(vbox, r.box, frame):
-            # Tether is unsure: does the ML candidate look like our target?
+            # Camtrak is unsure: does the ML candidate look like our target?
             v = self.tracker.verify(frame, vbox)
             info["verify_psr"] = round(v["psr"], 2)
             info["verify_color"] = round(v["color"], 3)
             if v["accept"]:
-                box = self._tether_shaped(vbox)
+                box = self._camtrak_shaped(vbox)
                 self.tracker.reacquire(frame, box)
                 info["action"] = "ml_reacquire"
                 conf = min(1.0, max(0.0, (v["psr"] - 5.0) / 15.0))
@@ -193,7 +195,7 @@ class MLTracker:
                 v = self.tracker.verify(frame, pbox)
                 info.update(verify_psr=round(v["psr"], 2), verify_color=round(v["color"], 3))
                 if v["accept"]:
-                    box = self._tether_shaped(pbox)
+                    box = self._camtrak_shaped(pbox)
                     self.tracker.reacquire(frame, box)
                     self._vit, self._since_sync = probe, 0
                     info["action"] = "ml_sweep_reacquire"

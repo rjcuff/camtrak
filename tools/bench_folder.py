@@ -1,5 +1,5 @@
 """
-bench_folder - run Tether on every benchmark sequence under a folder and print a table.
+bench_folder - run Camtrak on every benchmark sequence under a folder and print a table.
 
     python tools/bench_folder.py D:/LaSOT/bird          (bird-1 ... bird-20)
     python tools/bench_folder.py D:/OTB --csv otb.csv   (Skiing, Bird1, ...)
@@ -19,10 +19,10 @@ from pathlib import Path
 
 DEMO = Path(__file__).resolve().parent.parent / "demo"
 sys.path.insert(0, str(DEMO))
-import tether_demo  # noqa: E402
+import camtrak_demo  # noqa: E402
 from sources import find_groundtruth  # noqa: E402
 
-COLUMNS = ["sequence", "frames", "precision_20px", "success_auc", "mean_centre_error_px",
+COLUMNS = ["sequence", "frames", "precision_20px", "success_auc", "mean_center_error_px",
            "honest_when_absent", "confidence_when_correct", "confidence_when_wrong",
            "avg_update_ms", "LOST"]
 
@@ -34,7 +34,7 @@ def run_one(seq: Path, max_frames: int) -> dict:
         if max_frames:
             argv += ["--max-frames", str(max_frames)]
         with contextlib.redirect_stdout(io.StringIO()):
-            code = tether_demo.main(argv)
+            code = camtrak_demo.main(argv)
         if code != 0 or not out.exists():
             return {"sequence": seq.name, "error": f"exit {code}"}
         s = json.loads(out.read_text())
@@ -50,7 +50,7 @@ def fmt(v) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Run Tether over a folder of benchmark sequences.")
+    ap = argparse.ArgumentParser(description="Run Camtrak over a folder of benchmark sequences.")
     ap.add_argument("root", type=Path)
     ap.add_argument("--csv", type=Path, help="also save the table as CSV")
     ap.add_argument("--max-frames", type=int, default=0)

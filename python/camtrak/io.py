@@ -1,5 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md.
 """
-tether.io - frames from wherever they come from.
+camtrak.io - frames from wherever they come from.
 
     src = open_source("clip.mp4")        # video file
     src = open_source("frames/")         # folder of images (sorted by name)

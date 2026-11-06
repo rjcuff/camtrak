@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md.
 """
-tether.pipeline - everything an application needs, one call per frame.
+camtrak.pipeline - everything an application needs, one call per frame.
 
-    import tether as tt
+    import camtrak as tt
 
     pipe = tt.Pipeline(fps=30, auto=True)          # auto: find objects by itself
     pipe.add(frame, box=(x, y, w, h))              # or point=(x, y): box sized automatically
@@ -9,11 +11,11 @@ tether.pipeline - everything an application needs, one call per frame.
         result = pipe.process(frame)               # track every target
         for t in result.targets:                   # what to use in your app
             print(t.id, t.label, t.center, t.speed)
-        send(result.to_dict())                     # JSON-ready: ids, boxes, speeds, colours
-        show(pipe.render(frame, result))           # optional: Tether's HUD drawn on a copy
+        send(result.to_dict())                     # JSON-ready: ids, boxes, speeds, colors
+        show(pipe.render(frame, result))           # optional: Camtrak's HUD drawn on a copy
 
 The pipeline owns:
-  * MultiTracker   - one Tether tracker per target, IDs, speeds, pruning
+  * MultiTracker   - one Camtrak tracker per target, IDs, speeds, pruning
   * AutoDetector   - finds new targets (plain-background blobs, scene-relative movers)
   * CutDetector    - edited video: at a cut, auto targets are dropped and yours search
   * focus          - which target the HUD magnifies (best locked one, or the one you pick)
@@ -46,7 +48,7 @@ class FrameResult:
     ms: float = 0.0                    # time spent in process()
     focus: int | None = None
     removed: list = field(default_factory=list)   # (id, reason, box) dropped this frame
-    colours: dict = field(default_factory=dict)   # id -> "#RRGGBB" in the current theme
+    colors: dict = field(default_factory=dict)   # id -> "#RRGGBB" in the current theme
 
     def to_dict(self) -> dict:
         """Plain dict for JSON / IPC / logging."""
@@ -62,7 +64,7 @@ class FrameResult:
                 "velocity": [round(t.velocity[0], 1), round(t.velocity[1], 1)],
                 "speed": round(t.speed, 1),
                 "confidence": round(t.confidence, 3),
-                "color": self.colours.get(t.id),
+                "color": self.colors.get(t.id),
             })
         return {"frame": self.index, "scene_cut": self.scene_cut, "focus": self.focus,
                 "ms": round(self.ms, 2), "targets": out,
@@ -72,7 +74,7 @@ class FrameResult:
 class Pipeline:
     def __init__(self, fps: float = 30.0, *, auto: bool = False, ml: bool = True,
                  cut_detect: bool = True, max_targets: int = 60, auto_every: int = 3,
-                 sensitivity: float = 6.0, motion: bool = True, theme: str = "tether",
+                 sensitivity: float = 6.0, motion: bool = True, theme: str = "camtrak",
                  labels: bool = True, focus_card: bool = True, trails: bool | None = None,
                  **tracker_params: float) -> None:
         self.fps = fps
@@ -163,7 +165,7 @@ class Pipeline:
         self._refocus()
         visible = self.tracks.visible
         return FrameResult(self.index, visible, cut, camera, (time.perf_counter() - t0) * 1000,
-                           self.focus, removed, {t.id: self._colour_hex(t.id) for t in visible})
+                           self.focus, removed, {t.id: self._color_hex(t.id) for t in visible})
 
     def _refocus(self) -> None:
         """Keep a target the user chose; else follow the best-established
@@ -184,7 +186,7 @@ class Pipeline:
             self._renderer = Renderer(frame_shape, self.theme, **self._render_opts)
         return self._renderer
 
-    def _colour_hex(self, tid: int) -> str:
+    def _color_hex(self, tid: int) -> str:
         palette = THEMES[self.theme].palette
         return bgr_hex(palette[(tid - 1) % len(palette)])
 

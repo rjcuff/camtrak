@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 /*
  * patch.h - cutting a small grayscale patch out of a frame and preparing it
  * for the correlation filter.
@@ -5,15 +7,15 @@
 #ifndef TT_PATCH_H
 #define TT_PATCH_H
 
-#include "tether/tether.h"
+#include "camtrak/camtrak.h"
 
 /* 1 if the frame is usable (non-null data, positive size, sane stride/format). */
-int tt_frame_valid(const tether_frame *f);
+int tt_frame_valid(const camtrak_frame *f);
 
 /*
  * log(1 + v) for every channel value v, plus how a BGR pixel becomes that one
  * channel: v = clamp((wb*B + wg*G + wr*R + off) >> 8, 0, 255). The default is
- * luma; tt_choose_channel() may switch a tracker to a colour projection.
+ * luma; tt_choose_channel() may switch a tracker to a color projection.
  */
 typedef struct {
     float v[256];
@@ -25,19 +27,19 @@ void tt_make_log_lut(tt_log_lut *lut);
 
 /*
  * Pick the channel the tracker sees, for the box (cx, cy, w, h) on a BGR frame.
- * Luma loses colour contrast (a red car on a brown field has nearly the same
+ * Luma loses color contrast (a red car on a brown field has nearly the same
  * brightness), so we compare luma with Fisher's linear discriminant of
  * target vs surrounding pixels (and blends of the two) and keep whichever
- * separates the target best; luma unless a colour projection is clearly
- * better. The chosen projection is stretched over the colours seen, so the
+ * separates the target best; luma unless a color projection is clearly
+ * better. The chosen projection is stretched over the colors seen, so the
  * 8-bit channel keeps its resolution. Gray frames: luma, returns 1.
  * Returns separability(chosen) / separability(luma), >= 1.
  */
-float tt_choose_channel(const tether_frame *f, float cx, float cy, float w, float h,
+float tt_choose_channel(const camtrak_frame *f, float cx, float cy, float w, float h,
                         tt_log_lut *lut);
 
 /*
- * Sample a w x h patch of log(1 + gray) values centred on (cx, cy).
+ * Sample a w x h patch of log(1 + gray) values centered on (cx, cy).
  * Taking the log of each source pixel through a 256-entry table, then
  * interpolating, is much cheaper than calling logf on every patch pixel.
  *
@@ -48,7 +50,7 @@ float tt_choose_channel(const tether_frame *f, float cx, float cy, float w, floa
  * interpolation; outside the image the border pixels are repeated. BGR frames
  * are converted to gray on the fly, so no full-frame buffer is needed.
  */
-void tt_sample_patch(const tether_frame *f, const tt_log_lut *lut, float cx, float cy,
+void tt_sample_patch(const camtrak_frame *f, const tt_log_lut *lut, float cx, float cy,
                      float step, float angle, int w, int h, float *out);
 
 /* Separable Hann (cosine) window, w*h values in [0, 1]. */

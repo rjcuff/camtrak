@@ -101,18 +101,18 @@ def _render(img: np.ndarray, st: _State, index: int, count: int) -> np.ndarray:
         size = f"  box {round(st.box[2])}x{round(st.box[3])}"
     else:
         size = ""
-    for colour, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
+    for color, thick in (((0, 0, 0), 3), ((255, 255, 255), 1)):
         cv2.putText(view, f"frame {index}/{count - 1}{size}", (10, 22),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, thick, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, thick, cv2.LINE_AA)
         cv2.putText(view, HELP, (10, view.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
-                    colour, thick, cv2.LINE_AA)
+                    color, thick, cv2.LINE_AA)
     return view
 
 
 def select_target(src: FrameSource, start: int = 0,
                   box: Box | None = None) -> tuple[int, Box] | None:
     """Let the user choose a frame and a box. Returns (frame index, box) or None."""
-    window = "Tether - select target"
+    window = "Camtrak - select target"
     try:
         return _select(src, window, start, box)
     finally:

@@ -1,5 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 /*
- * kalman.h - constant-velocity Kalman filter for the target centre.
+ * kalman.h - constant-velocity Kalman filter for the target center.
  *
  * The state per axis is position p and velocity v (pixels, pixels/frame).
  * x and y are independent, so we run two tiny 2-state filters instead of

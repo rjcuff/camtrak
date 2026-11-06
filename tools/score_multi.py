@@ -1,10 +1,10 @@
 """
-score_multi - score a tether_hud --csv run against a multi-object truth CSV.
+score_multi - score a camtrak_hud --csv run against a multi-object truth CSV.
 
     python tools/score_multi.py clips/sky.truth.csv clips/sky_run.csv
 
 Per frame, every truth object is matched to the nearest LOCKED/COASTING track
-whose centre is within `--radius` px (greedy, closest first). Reports:
+whose center is within `--radius` px (greedy, closest first). Reports:
   coverage     share of truth object-frames that have a matching track
   false        share of track-frames not near any truth object (wrong things tracked)
   id_switches  times a truth object's matched track ID changed

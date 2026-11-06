@@ -107,10 +107,10 @@ void tt_synth_render(tt_synth *s, int index)
     const double t = (double)index;
     /* background pans left/right */
     const int pan = (int)(PAN_RANGE / 2 + (PAN_RANGE / 2 - 10) * sin(0.02 * t));
-    /* target centre follows a Lissajous curve */
+    /* target center follows a Lissajous curve */
     const double cx = s->w * (0.5 + 0.3 * sin(0.03 * t));
     const double cy = s->h * (0.5 + 0.25 * sin(0.047 * t + 1.0));
-    /* current size: the texture is stretched (nearest neighbour) as it grows */
+    /* current size: the texture is stretched (nearest neighbor) as it grows */
     const int sz = (int)floor(s->tsz * pow(s->growth, t) + 0.5);
     const int x0 = (int)floor(cx - sz / 2.0 + 0.5);
     const int y0 = (int)floor(cy - sz / 2.0 + 0.5);
@@ -128,7 +128,7 @@ void tt_synth_render(tt_synth *s, int index)
             }
         }
     }
-    /* Occluder: a flat grey block twice the target size that follows the
+    /* Occluder: a flat gray block twice the target size that follows the
      * target, so it is completely invisible (think: skier behind a tree). */
     s->occluded = index >= s->occ_start && index <= s->occ_end;
     if (s->occluded) {
@@ -155,13 +155,13 @@ void tt_synth_render(tt_synth *s, int index)
     s->truth.h = (float)sz;
 }
 
-tether_frame tt_synth_frame(const tt_synth *s)
+camtrak_frame tt_synth_frame(const tt_synth *s)
 {
-    tether_frame f;
+    camtrak_frame f;
     f.data = s->frame;
     f.width = s->w;
     f.height = s->h;
     f.stride = s->w;
-    f.format = TETHER_FORMAT_GRAY8;
+    f.format = CAMTRAK_FORMAT_GRAY8;
     return f;
 }

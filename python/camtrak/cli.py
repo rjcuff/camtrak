@@ -1,20 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md.
 """
-tether.cli - the Tether app: track objects in any video, camera or stream.
+camtrak.cli - the Camtrak app: track objects in any video, camera or stream.
 
-  tether --source clip.mp4 --display                 pick targets (click / drag), then play
-  tether --source clip.mp4 --auto --display          find objects automatically
-  tether --source 0 --auto --display                 webcam
-  tether --source rtsp://cam/stream --auto --jsonl -  live stream, results as JSON lines on stdout
-  tether --source clip.mp4 --auto --output out.mp4 --csv out.csv --jsonl out.jsonl
+  camtrak --source clip.mp4 --display                 pick targets (click / drag), then play
+  camtrak --source clip.mp4 --auto --display          find objects automatically
+  camtrak --source 0 --auto --display                 webcam
+  camtrak --source rtsp://cam/stream --auto --jsonl -  live stream, results as JSON lines on stdout
+  camtrak --source clip.mp4 --auto --output out.mp4 --csv out.csv --jsonl out.jsonl
 
-(`tether` once installed with pip; otherwise `python demo/tether_hud.py ...`.)
+(`camtrak` once installed with pip; otherwise `python demo/camtrak_hud.py ...`.)
 
 In the window:
   left click   lock onto the object under the cursor (box sized automatically);
                click a target to magnify it
   left drag    lock onto exactly the box you draw
   right click  drop the target under the cursor
-  Tab          next target in the focus card       t  next colour theme
+  Tab          next target in the focus card       t  next color theme
   x            auto-detect on / off                 c  drop all targets
   space        pause / resume (start, in the picker)
   a / d        picker only: previous / next frame (A / D: 10 frames)
@@ -37,7 +39,7 @@ from .io import open_source
 from .pipeline import Pipeline
 from .render import THEMES
 
-WINDOW = "tether"
+WINDOW = "camtrak"
 MAX_VIEW = (1280, 720)
 DRAG_MIN = 5          # screen px: less than this between press and release is a click
 
@@ -61,7 +63,7 @@ def parse_point(text: str) -> tuple[float, float]:
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(prog="tether", description="Track many objects in any video, camera or stream.")
+    p = argparse.ArgumentParser(prog="camtrak", description="Track many objects in any video, camera or stream.")
     p.add_argument("--source", required=True,
                    help="video file, image folder, camera number (0) or stream URL (rtsp://...)")
     p.add_argument("--bbox", type=parse_bbox, action="append", default=[],
@@ -76,7 +78,7 @@ def parse_args(argv):
                    help="auto: lower finds fainter objects (and more false ones)")
     p.add_argument("--no-motion", action="store_true",
                    help="auto: only the stands-out-from-plain-background detector")
-    p.add_argument("--theme", default="tether", choices=sorted(THEMES), help="colour theme")
+    p.add_argument("--theme", default="camtrak", choices=sorted(THEMES), help="color theme")
     p.add_argument("--display", action="store_true", help="show the video window")
     p.add_argument("--output", type=Path, help="write the annotated video (mp4)")
     p.add_argument("--csv", type=Path, help="per-frame, per-target results as CSV")
@@ -180,8 +182,8 @@ class App:
             self.pipe.renderer(frame.shape).hint(out, hint)
         if self.mouse and self.mouse.drag:
             x, y, w, h = (round(v) for v in self.mouse.drag)
-            colour = self.pipe.renderer(frame.shape).theme.accent
-            cv2.rectangle(out, (x, y), (x + w, y + h), colour, 1, cv2.LINE_AA)
+            color = self.pipe.renderer(frame.shape).theme.accent
+            cv2.rectangle(out, (x, y), (x + w, y + h), color, 1, cv2.LINE_AA)
         return out
 
     def show(self, img: np.ndarray) -> None:
@@ -241,7 +243,7 @@ class App:
             return 1
 
         log = sys.stderr if a.jsonl == "-" else sys.stdout
-        print(f"tether {version()}: {W}x{H} @ {self.src.fps:.0f} fps, "
+        print(f"camtrak {version()}: {W}x{H} @ {self.src.fps:.0f} fps, "
               f"{'live' if self.src.live else f'{self.src.count} frames'}, theme {a.theme}"
               f"{', auto' if a.auto else ''}", file=log)
         writer = cv2.VideoWriter(str(a.output), cv2.VideoWriter_fourcc(*"mp4v"), self.src.fps, (W, H)) \

@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md.
 """
-tether.multi - follow many targets at once, each with an ID and a speed.
+camtrak.multi - follow many targets at once, each with an ID and a speed.
 
-    import tether as tt
+    import camtrak as tt
     mt = tt.MultiTracker(fps=30)
     a = mt.add(frame, (x, y, w, h))            # returns the new target's ID
     b = mt.add(frame, box2, source="auto")
     for t in mt.update(next_frame):            # every live target
         print(t.id, t.status_name, t.center, t.speed)   # speed in px/s
 
-Each target has its own Tether tracker (~0.2-0.6 ms per target per frame), so
+Each target has its own Camtrak tracker (~0.2-0.6 ms per target per frame), so
 dozens of targets stay real-time on one CPU core. The first `ml_max` targets
 picked by the user also get the neural second opinion (MLTracker, ~4 ms each)
 when the model is available.
@@ -33,7 +35,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from . import COASTING, LOST, TRACKING, Result, TetherError, Tracker
+from . import COASTING, LOST, TRACKING, Result, CamtrakError, Tracker
 
 _LABELS = {TRACKING: "LOCKED", COASTING: "COASTING", LOST: "SEARCHING"}
 
@@ -109,7 +111,7 @@ class MultiTracker:
         probation      tentative targets that have not moved relative to the scene
                        within this many frames are dropped (default: 2 s)
         confirm_plain  without camera motion, confirm after this many confident frames
-        params         tracker tuning, passed to every Tracker (see tether.h)
+        params         tracker tuning, passed to every Tracker (see camtrak.h)
         """
         self.fps = float(fps) if fps and fps > 0 else 30.0
         self.ml = ml
@@ -124,6 +126,7 @@ class MultiTracker:
         self._next_id = 1
         self._ml_ok = ml
         self.removed: list[tuple[int, str, tuple]] = []   # (id, reason, box) from the last update()
+        self._together: dict[tuple[int, int], int] = {}     # frames two targets moved as one
 
     # ------------------------------------------------------------------ targets
     @property
@@ -147,7 +150,7 @@ class MultiTracker:
             try:
                 from .ml import MLTracker
                 return MLTracker(**self.params)
-            except (TetherError, AttributeError, ImportError):
+            except (CamtrakError, AttributeError, ImportError):
                 self._ml_ok = False      # model or OpenCV missing: correlation only
         return Tracker(**self.params)
 
@@ -241,7 +244,7 @@ class MultiTracker:
         t.velocity = ((1 - a) * t.velocity[0] + a * vx, (1 - a) * t.velocity[1] + a * vy)
         t.trail.append((cx, cy))
 
-    SETTLE = 4          # frames a new tracker needs to centre itself on the object
+    SETTLE = 4          # frames a new tracker needs to center itself on the object
     SUSTAIN = 4         # consecutive frames the scene-relative movement must hold
 
     def _probation(self, t: Target, camera) -> None:
@@ -279,8 +282,9 @@ class MultiTracker:
             if t.miss_frames >= self.auto_drop:
                 self.removed.append((t.id, "lost", t.box))
                 self.remove(t.id)
-            elif t.miss_frames and (cx < w / 4 or cy < h / 4 or cx > W - w / 4 or cy > H - h / 4):
-                # unsure and mostly out of the picture: it flew out
+            elif cx < w / 4 or cy < h / 4 or cx > W - w / 4 or cy > H - h / 4:
+                # mostly out of the picture: the object left. (A tracker pinned to
+                # the frame edge can still report a confident match on the border.)
                 self.removed.append((t.id, "left_frame", t.box))
                 self.remove(t.id)
         # two trackers on one object: keep the user one, then the older one
@@ -294,13 +298,23 @@ class MultiTracker:
                     self.remove(b.id)
 
     def _same_object(self, a: Target, b: Target) -> bool:
-        """Boxes overlap a lot, or the centres nearly coincide (a loose and a
-        tight box on one object can have a low IoU)."""
+        """Boxes overlap a lot, or the centers nearly coincide (a loose and a
+        tight box on one object can have a low IoU), or, for 10 frames in a row,
+        b stays close to a and moves exactly like it (two trackers holding the
+        nose and the tail of one aircraft)."""
         if iou(a.box, b.box) > self.duplicate_iou:
             return True
         (ax, ay), (bx, by) = a.center, b.center
-        near = 0.35 * min(max(a.box[2], a.box[3]), max(b.box[2], b.box[3]))
-        return float(np.hypot(ax - bx, ay - by)) < near
+        dist = float(np.hypot(ax - bx, ay - by))
+        if dist < 0.35 * min(max(a.box[2], a.box[3]), max(b.box[2], b.box[3])):
+            return True
+        dv = float(np.hypot(a.velocity[0] - b.velocity[0], a.velocity[1] - b.velocity[1]))
+        moving_together = (dist < 0.75 * max(a.box[2], a.box[3], b.box[2], b.box[3])
+                           and dv < 0.1 * max(a.speed, b.speed) + 5.0
+                           and a.status == TRACKING and b.status == TRACKING)
+        key = (a.id, b.id)
+        self._together[key] = self._together.get(key, 0) + 1 if moving_together else 0
+        return self._together[key] >= 10
 
     def close(self) -> None:
         self.clear()

@@ -1,5 +1,5 @@
 """
-test_app - drives the `tether` app's window with scripted mouse clicks and keys.
+test_app - drives the `camtrak` app's window with scripted mouse clicks and keys.
 
     python tests/test_app.py        (needs numpy + opencv-python and a built library)
 
@@ -22,7 +22,7 @@ import cv2
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "python"))
-from tether import cli  # noqa: E402
+from camtrak import cli  # noqa: E402
 
 
 class FakeWindow:

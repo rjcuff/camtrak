@@ -1,5 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Ryan Cuff. Commercial licenses: see LICENSING.md. */
 /*
- * tether.c - public API: owns the tracker state and runs the per-frame pipeline.
+ * camtrak.c - public API: owns the tracker state and runs the per-frame pipeline.
  *
  * Per frame, depending on the current mode:
  *
@@ -16,7 +18,7 @@
  *     reacquire_budget windows per frame. A match with PSR >= psr_reacquire
  *     restarts tracking there; otherwise report LOST at the last known box.
  */
-#include "tether/tether.h"
+#include "camtrak/camtrak.h"
 
 #include "kalman.h"
 #include "mosse.h"
@@ -45,23 +47,27 @@
 /* Most the box size may change in one frame. Real objects change size
  * smoothly; sudden jumps come from clutter (a shadow, a tree) at the box edge. */
 #define TT_SCALE_MAX_CHANGE 0.025f
-/* tether_verify: shape match needed to accept an external candidate. Lower
+/* Growing is capped harder than shrinking: real objects grow slowly (they
+ * approach, or the camera zooms), while a box that has started to include
+ * background tends to keep growing into it. */
+#define TT_SCALE_MAX_GROWTH 0.01f
+/* camtrak_verify: shape match needed to accept an external candidate. Lower
  * than psr_reacquire because the candidate already passed another model. */
 #define TT_VERIFY_PSR 7.0f
-/* Colour match (Bhattacharyya, 1 = as at selection) a candidate needs; vetoes
+/* Color match (Bhattacharyya, 1 = as at selection) a candidate needs; vetoes
  * look-alikes. Measured on drone ski footage: same skier 0.94-0.98 across
  * shots, other skier 0.70-0.75, snow 0.28. */
 #define TT_COLOR_MIN 0.85f
-/* With near-certain colour, a weaker shape match is enough (new pose). */
+/* With near-certain color, a weaker shape match is enough (new pose). */
 #define TT_COLOR_STRONG 0.93f
 #define TT_VERIFY_PSR_STRONG_COLOR 5.0f
-/* Own LOST search: with near-certain colour, this shape match re-acquires
- * (instead of psr_reacquire). Higher than for tether_verify because the
+/* Own LOST search: with near-certain color, this shape match re-acquires
+ * (instead of psr_reacquire). Higher than for camtrak_verify because the
  * search tries many windows, so a chance match is likelier. */
 #define TT_REACQ_PSR_STRONG_COLOR 8.0f
 /* A candidate box must be at least this much inside the frame. */
 #define TT_MIN_INSIDE 0.7f
-/* Learning weight for a view confirmed via tether_reacquire (normal is learning_rate). */
+/* Learning weight for a view confirmed via camtrak_reacquire (normal is learning_rate). */
 #define TT_REACQUIRE_RATE 0.5f
 /* Smallest box side we will shrink to, in pixels. */
 #define TT_MIN_SIDE 6.0f
@@ -69,24 +75,24 @@
 static const float k_redetect_scales[] = { 1.0f, 0.8f, 1.25f };
 #define TT_N_REDETECT_SCALES 3
 
-struct tether_tracker {
-    tether_params p;
+struct camtrak_tracker {
+    camtrak_params p;
     int   locked;
     int   pw, ph;     /* patch size in patch pixels (powers of two) */
     float base_step;  /* image pixels per patch pixel at lock time */
     float base_w, base_h; /* target size at lock time */
     float scale;      /* current size relative to lock time */
     float step;       /* image pixels per patch pixel now = base_step * scale */
-    float cx, cy;     /* current target centre estimate, image pixels */
+    float cx, cy;     /* current target center estimate, image pixels */
     float tw, th;     /* current target size, image pixels = base * scale */
     tt_mosse  mosse;  /* appearance model, adapts every confident frame */
     tt_mosse  anchor; /* frozen copy from lock time: what the user selected */
     int       lost_frames; /* frames spent LOST (alternates the re-detection model) */
-    tether_debug dbg;      /* what the last update did, for tether_get_debug */
+    camtrak_debug dbg;      /* what the last update did, for camtrak_get_debug */
     tt_log_lut lut;   /* log(1 + v) table + BGR->channel weights used by patch sampling */
     float channel_gain; /* separability of the chosen channel vs brightness, from lock */
     tt_scale  sc;     /* size estimator; unused when scale_step <= 1 */
-    tt_color  color;  /* colour model of the selection (BGR input only) */
+    tt_color  color;  /* color model of the selection (BGR input only) */
     int       use_scale;
     tt_kalman kf;     /* motion model for (cx, cy) */
     int   misses;     /* consecutive frames without an accepted measurement */
@@ -103,16 +109,16 @@ struct tether_tracker {
     float *response;  /* correlation output, pw*ph */
 };
 
-const char *tether_version(void)
+const char *camtrak_version(void)
 {
     return "0.4.0";
 }
 
 /* ------------------------------------------------------------------ params */
 
-tether_params tether_default_params(void)
+camtrak_params camtrak_default_params(void)
 {
-    tether_params p;
+    camtrak_params p;
     p.padding          = 2.5f;
     p.template_size    = 64;
     p.learning_rate    = 0.125f;  /* value from the MOSSE paper */
@@ -133,7 +139,7 @@ tether_params tether_default_params(void)
     return p;
 }
 
-static int params_valid(const tether_params *p)
+static int params_valid(const camtrak_params *p)
 {
     return p->padding >= 1.0f && p->padding <= 10.0f
         && tt_is_pow2(p->template_size) && p->template_size >= TT_MIN_PATCH
@@ -152,10 +158,10 @@ static int params_valid(const tether_params *p)
 
 /* ------------------------------------------------------------- lifecycle */
 
-tether_tracker *tether_create(const tether_params *params)
+camtrak_tracker *camtrak_create(const camtrak_params *params)
 {
-    tether_tracker *t;
-    const tether_params p = params ? *params : tether_default_params();
+    camtrak_tracker *t;
+    const camtrak_params p = params ? *params : camtrak_default_params();
 
     if (!params_valid(&p)) {
         return NULL;
@@ -168,7 +174,7 @@ tether_tracker *tether_create(const tether_params *params)
     return t;
 }
 
-static void release_buffers(tether_tracker *t)
+static void release_buffers(camtrak_tracker *t)
 {
     tt_mosse_free(&t->mosse);
     tt_mosse_free(&t->anchor);
@@ -181,7 +187,7 @@ static void release_buffers(tether_tracker *t)
     t->locked = 0;
 }
 
-void tether_destroy(tether_tracker *t)
+void camtrak_destroy(camtrak_tracker *t)
 {
     if (t) {
         release_buffers(t);
@@ -210,7 +216,7 @@ static float clampf(float v, float lo, float hi)
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-/* Colour veto: unavailable (-1) passes, otherwise it must be close to the selection. */
+/* Color veto: unavailable (-1) passes, otherwise it must be close to the selection. */
 static int color_ok(float color)
 {
     return color < 0.0f || color >= TT_COLOR_MIN;
@@ -221,15 +227,15 @@ static float psr_to_confidence(float psr)
     return clampf((psr - TT_PSR_FLOOR) / (TT_PSR_FULL - TT_PSR_FLOOR), 0.0f, 1.0f);
 }
 
-/* Cut, then preprocess, a patch centred on (cx, cy) into `dst`. */
-static void extract_into(tether_tracker *t, const tether_frame *f, float cx, float cy,
+/* Cut, then preprocess, a patch centered on (cx, cy) into `dst`. */
+static void extract_into(camtrak_tracker *t, const camtrak_frame *f, float cx, float cy,
                          float step_mul, float angle, float *dst)
 {
     tt_sample_patch(f, &t->lut, cx, cy, t->step * step_mul, angle, t->pw, t->ph, dst);
     tt_preprocess(dst, t->window, t->pw * t->ph);
 }
 
-static void extract(tether_tracker *t, const tether_frame *f, float cx, float cy,
+static void extract(camtrak_tracker *t, const camtrak_frame *f, float cx, float cy,
                     float step_mul, float angle)
 {
     extract_into(t, f, cx, cy, step_mul, angle, t->patch);
@@ -238,30 +244,30 @@ static void extract(tether_tracker *t, const tether_frame *f, float cx, float cy
 /* One correlation attempt: where the target matched, how well, at what size. */
 typedef struct {
     tt_peak pk;
-    float   x, y;    /* matched target centre, image pixels */
+    float   x, y;    /* matched target center, image pixels */
     float   ratio;   /* size tried, relative to the current size */
 } tt_match;
 
 /*
- * Correlate a window centred on (cx, cy) with the target assumed `ratio` times
+ * Correlate a window centered on (cx, cy) with the target assumed `ratio` times
  * its current size. Sampling a ratio-times-bigger region into the same patch
  * makes a target that grew by `ratio` look exactly like the learned one, so a
  * single filter serves every scale.
  */
-static tt_match match_from_response(const tether_tracker *t, const float *response,
+static tt_match match_from_response(const camtrak_tracker *t, const float *response,
                                     float cx, float cy, float ratio)
 {
     tt_match m;
     const float step = t->step * ratio;
     m.pk = tt_mosse_find_peak(response, t->pw, t->ph);
-    /* the peak's offset from the patch centre is the motion, in patch pixels */
+    /* the peak's offset from the patch center is the motion, in patch pixels */
     m.x = cx + (m.pk.x - (float)(t->pw / 2)) * step;
     m.y = cy + (m.pk.y - (float)(t->ph / 2)) * step;
     m.ratio = ratio;
     return m;
 }
 
-static tt_match detect_with(tether_tracker *t, tt_mosse *model, const tether_frame *f,
+static tt_match detect_with(camtrak_tracker *t, tt_mosse *model, const camtrak_frame *f,
                             float cx, float cy, float ratio)
 {
     extract(t, f, cx, cy, ratio, 0.0f);
@@ -269,14 +275,14 @@ static tt_match detect_with(tether_tracker *t, tt_mosse *model, const tether_fra
     return match_from_response(t, t->response, cx, cy, ratio);
 }
 
-static tt_match detect_at(tether_tracker *t, const tether_frame *f, float cx, float cy,
+static tt_match detect_at(camtrak_tracker *t, const camtrak_frame *f, float cx, float cy,
                           float ratio)
 {
     return detect_with(t, &t->mosse, f, cx, cy, ratio);
 }
 
 /* Change the target size to `scale` x the lock-time size, within sane limits. */
-static void set_scale(tether_tracker *t, const tether_frame *f, float scale)
+static void set_scale(camtrak_tracker *t, const camtrak_frame *f, float scale)
 {
     const float min_scale = TT_MIN_SIDE / fminf(t->base_w, t->base_h);
     const float max_scale = fminf((float)f->width / t->base_w, (float)f->height / t->base_h);
@@ -286,14 +292,14 @@ static void set_scale(tether_tracker *t, const tether_frame *f, float scale)
     t->th = t->base_h * t->scale;
 }
 
-static void learn_at(tether_tracker *t, const tether_frame *f, float cx, float cy)
+static void learn_at(camtrak_tracker *t, const camtrak_frame *f, float cx, float cy)
 {
     extract(t, f, cx, cy, 1.0f, 0.0f);
     tt_mosse_update(&t->mosse, t->patch);
 }
 
-static void write_result(const tether_tracker *t, float x, float y, float psr,
-                         tether_status status, tether_result *out)
+static void write_result(const camtrak_tracker *t, float x, float y, float psr,
+                         camtrak_status status, camtrak_result *out)
 {
     out->box.x = x - 0.5f * t->tw;
     out->box.y = y - 0.5f * t->th;
@@ -306,7 +312,7 @@ static void write_result(const tether_tracker *t, float x, float y, float psr,
 
 /* ------------------------------------------------------------------ lock */
 
-static int box_valid(const tether_frame *f, tether_box b)
+static int box_valid(const camtrak_frame *f, camtrak_box b)
 {
     float cx, cy;
     if (!isfinite(b.x) || !isfinite(b.y) || !isfinite(b.w) || !isfinite(b.h)) {
@@ -332,7 +338,7 @@ static const float k_init_warps[][2] = {
     { -0.10f, 1.00f }, {  0.15f, 1.00f }, { -0.15f, 1.00f }, { 0.00f, 1.00f },
 };
 
-static void start_tracking_at(tether_tracker *t, float x, float y)
+static void start_tracking_at(camtrak_tracker *t, float x, float y)
 {
     tt_kalman_init(&t->kf, x, y, t->p.kalman_q, t->p.kalman_r);
     t->cx = t->good_x = x;
@@ -341,13 +347,13 @@ static void start_tracking_at(tether_tracker *t, float x, float y)
     t->lost = 0;
 }
 
-tether_error tether_lock(tether_tracker *t, const tether_frame *frame, tether_box box)
+camtrak_error camtrak_lock(camtrak_tracker *t, const camtrak_frame *frame, camtrak_box box)
 {
     float win_w, win_h, sigma;
     size_t n, i;
 
     if (!t || !tt_frame_valid(frame) || !box_valid(frame, box)) {
-        return TETHER_ERR_INVALID_ARG;
+        return CAMTRAK_ERR_INVALID_ARG;
     }
     release_buffers(t);
 
@@ -364,7 +370,7 @@ tether_error tether_lock(tether_tracker *t, const tether_frame *frame, tether_bo
     t->ph = clamp_int(next_pow2((int)ceilf(win_h / t->step)), TT_MIN_PATCH, t->p.template_size);
     n = (size_t)t->pw * (size_t)t->ph;
 
-    /* Re-detection grid: neighbouring windows overlap by half, so a target
+    /* Re-detection grid: neighboring windows overlap by half, so a target
      * anywhere lands in the well-lit middle of at least one window. */
     t->base_spacing = 0.5f * (float)(t->pw < t->ph ? t->pw : t->ph) * t->step;
 
@@ -381,11 +387,11 @@ tether_error tether_lock(tether_tracker *t, const tether_frame *frame, tether_bo
         || (t->use_scale && tt_scale_init(&t->sc, box.w, box.h, TT_SCALE_SAMPLES,
                                           t->p.scale_step, TT_SCALE_LR) != 0)) {
         release_buffers(t);
-        return TETHER_ERR_NO_MEMORY;
+        return CAMTRAK_ERR_NO_MEMORY;
     }
     tt_make_hann(t->pw, t->ph, t->window);
 
-    /* which channel to track in: brightness, or a colour projection that
+    /* which channel to track in: brightness, or a color projection that
      * separates this target from its surroundings better */
     t->channel_gain = t->p.adaptive_color
         ? tt_choose_channel(frame, box.x + 0.5f * box.w, box.y + 0.5f * box.h, box.w, box.h, &t->lut)
@@ -405,14 +411,14 @@ tether_error tether_lock(tether_tracker *t, const tether_frame *frame, tether_bo
     }
 
     t->locked = 1;
-    return TETHER_OK;
+    return CAMTRAK_OK;
 }
 
 /* ------------------------------------------------------- LOST: re-detect */
 
 /*
  * Cell k of spiral ring r: the cells (i, j) with max(|i|, |j|) == r, walked
- * clockwise in four sides of 2r cells each. Ring 0 is the single centre cell.
+ * clockwise in four sides of 2r cells each. Ring 0 is the single center cell.
  */
 static void ring_cell(int r, int k, int *i, int *j)
 {
@@ -431,7 +437,7 @@ static void ring_cell(int r, int k, int *i, int *j)
     }
 }
 
-static void enter_lost(tether_tracker *t)
+static void enter_lost(camtrak_tracker *t)
 {
     t->lost = 1;
     t->ring = 1;      /* ring 0 (the last good spot) is checked every frame anyway */
@@ -440,9 +446,9 @@ static void enter_lost(tether_tracker *t)
     t->lost_frames = 0;
 }
 
-static tether_box match_box(const tether_tracker *t, tt_match m)
+static camtrak_box match_box(const camtrak_tracker *t, tt_match m)
 {
-    tether_box b;
+    camtrak_box b;
     b.w = t->tw * m.ratio;
     b.h = t->th * m.ratio;
     b.x = m.x - 0.5f * b.w;
@@ -451,7 +457,7 @@ static tether_box match_box(const tether_tracker *t, tt_match m)
 }
 
 /* Fraction of `b`'s area that lies inside the frame. */
-static float inside_fraction(const tether_frame *f, tether_box b)
+static float inside_fraction(const camtrak_frame *f, camtrak_box b)
 {
     const float iw = fminf(b.x + b.w, (float)f->width) - fmaxf(b.x, 0.0f);
     const float ih = fminf(b.y + b.h, (float)f->height) - fmaxf(b.y, 0.0f);
@@ -464,16 +470,16 @@ static float inside_fraction(const tether_frame *f, tether_box b)
  * and standing out from its surroundings like the selection did (a "match"
  * on a patch of rock or forest blends in).
  */
-static int candidate_plausible(const tether_tracker *t, const tether_frame *f, tether_box b)
+static int candidate_plausible(const camtrak_tracker *t, const camtrak_frame *f, camtrak_box b)
 {
     return inside_fraction(f, b) >= TT_MIN_INSIDE && tt_color_stands_out(&t->color, f, b);
 }
 
 /* Re-acquisition decision for a candidate found by the search. */
-static int reacquire_ok(const tether_tracker *t, const tether_frame *f, tt_match m)
+static int reacquire_ok(const camtrak_tracker *t, const camtrak_frame *f, tt_match m)
 {
     float color;
-    tether_box b;
+    camtrak_box b;
     if (m.pk.psr < TT_REACQ_PSR_STRONG_COLOR) {
         return 0;
     }
@@ -482,12 +488,12 @@ static int reacquire_ok(const tether_tracker *t, const tether_frame *f, tt_match
         return 0;
     }
     color = tt_color_match(&t->color, f, b);
-    /* shape alone must be very sure; with a clear colour match less is needed */
+    /* shape alone must be very sure; with a clear color match less is needed */
     return (m.pk.psr >= t->p.psr_reacquire && color_ok(color)) || color >= TT_COLOR_STRONG;
 }
 
 /* Keep the better candidate: an acceptable one always beats an unacceptable one. */
-static void keep_best(tether_tracker *t, const tether_frame *f, tt_match *best, int *best_ok, tt_match m)
+static void keep_best(camtrak_tracker *t, const camtrak_frame *f, tt_match *best, int *best_ok, tt_match m)
 {
     const int ok = reacquire_ok(t, f, m);
     if ((ok && !*best_ok) || (ok == *best_ok && m.pk.psr > best->pk.psr)) {
@@ -506,14 +512,14 @@ static void keep_best(tether_tracker *t, const tether_frame *f, tt_match *best, 
  * The current model knows the latest look of the target, but may have been
  * contaminated while the target was being covered up; the anchor cannot be.
  */
-static tt_match redetect(tether_tracker *t, const tether_frame *f, int *found)
+static tt_match redetect(camtrak_tracker *t, const camtrak_frame *f, int *found)
 {
     tt_mosse *model = (t->lost_frames & 1) ? &t->anchor : &t->mosse;
     const float sweep_ratio = k_redetect_scales[t->sweep_scale];
     const float spacing = t->base_spacing * t->scale * sweep_ratio;
     const int frame_rings = (int)ceilf(fmaxf((float)f->width, (float)f->height) / spacing) + 1;
     /* Search radius grows with time lost: a target that just vanished is
-     * almost certainly nearby, so re-check the neighbourhood every frame first
+     * almost certainly nearby, so re-check the neighborhood every frame first
      * and widen by one ring every two frames until the whole frame is covered. */
     const int reach = t->lost_frames / 2 + 2;
     const int max_ring = reach < frame_rings ? reach : frame_rings;
@@ -561,7 +567,7 @@ static tt_match redetect(tether_tracker *t, const tether_frame *f, int *found)
     return best;
 }
 
-static void update_lost(tether_tracker *t, const tether_frame *f, tether_result *out)
+static void update_lost(camtrak_tracker *t, const camtrak_frame *f, camtrak_result *out)
 {
     const int used_anchor = t->lost_frames & 1;   /* same rule redetect() uses */
     int found;
@@ -577,20 +583,20 @@ static void update_lost(tether_tracker *t, const tether_frame *f, tether_result 
         start_tracking_at(t, clampf(m.x, 0.0f, (float)f->width), clampf(m.y, 0.0f, (float)f->height));
         learn_at(t, f, t->cx, t->cy);
         t->dbg.learned = 1;
-        write_result(t, t->cx, t->cy, m.pk.psr, TETHER_TRACKING, out);
+        write_result(t, t->cx, t->cy, m.pk.psr, CAMTRAK_TRACKING, out);
         return;
     }
     /* Stay honest: report the last known box, flagged LOST. */
-    write_result(t, t->good_x, t->good_y, m.pk.psr, TETHER_LOST, out);
+    write_result(t, t->good_x, t->good_y, m.pk.psr, CAMTRAK_LOST, out);
 }
 
 /* ------------------------------------------------- TRACKING / COASTING */
 
-static void update_tracking(tether_tracker *t, const tether_frame *f, tether_result *out)
+static void update_tracking(camtrak_tracker *t, const camtrak_frame *f, camtrak_result *out)
 {
     tt_match m;
     tt_peak pk;
-    tether_status status;
+    camtrak_status status;
 
     /* 1. predict where the target is now and search there, not at the old spot */
     tt_kalman_predict(&t->kf);
@@ -611,19 +617,19 @@ static void update_tracking(tether_tracker *t, const tether_frame *f, tether_res
                                                  t->tw, t->th);
             t->dbg.scale_factor = factor;
             set_scale(t, f, t->scale * clampf(factor, 1.0f - TT_SCALE_MAX_CHANGE,
-                                              1.0f + TT_SCALE_MAX_CHANGE));
+                                              1.0f + TT_SCALE_MAX_GROWTH));
         }
         t->misses = 0;
-        status = TETHER_TRACKING;
+        status = CAMTRAK_TRACKING;
     } else {
         tt_kalman_damp(&t->kf, t->p.coast_damping);
         t->misses++;
-        status = TETHER_COASTING;
+        status = CAMTRAK_COASTING;
     }
     t->kf.x.p = t->cx = clampf(t->kf.x.p, 0.0f, (float)f->width);
     t->kf.y.p = t->cy = clampf(t->kf.y.p, 0.0f, (float)f->height);
 
-    if (status == TETHER_TRACKING) {
+    if (status == CAMTRAK_TRACKING) {
         t->good_x = t->cx;
         t->good_y = t->cy;
         /* 4. adapt the appearance model, but only on a confident match: learning
@@ -638,19 +644,19 @@ static void update_tracking(tether_tracker *t, const tether_frame *f, tether_res
     } else if (t->misses >= t->p.lost_after) {
         /* 5. coasted too long: the prediction is no longer worth reporting */
         enter_lost(t);
-        write_result(t, t->good_x, t->good_y, pk.psr, TETHER_LOST, out);
+        write_result(t, t->good_x, t->good_y, pk.psr, CAMTRAK_LOST, out);
         return;
     }
     write_result(t, t->cx, t->cy, pk.psr, status, out);
 }
 
-tether_error tether_update(tether_tracker *t, const tether_frame *frame, tether_result *out)
+camtrak_error camtrak_update(camtrak_tracker *t, const camtrak_frame *frame, camtrak_result *out)
 {
     if (!t || !out || !tt_frame_valid(frame)) {
-        return TETHER_ERR_INVALID_ARG;
+        return CAMTRAK_ERR_INVALID_ARG;
     }
     if (!t->locked) {
-        return TETHER_ERR_NOT_LOCKED;
+        return CAMTRAK_ERR_NOT_LOCKED;
     }
     memset(&t->dbg, 0, sizeof(t->dbg));
     t->dbg.scale_factor = 1.0f;
@@ -665,34 +671,34 @@ tether_error tether_update(tether_tracker *t, const tether_frame *frame, tether_
     t->dbg.channel_gain = t->channel_gain;
     t->dbg.misses = t->misses;
     t->dbg.lost_frames = t->lost ? t->lost_frames : 0;
-    return TETHER_OK;
+    return CAMTRAK_OK;
 }
 
 /* Size of `box` relative to the current box (geometric mean of both sides). */
-static float box_ratio(const tether_tracker *t, tether_box box)
+static float box_ratio(const camtrak_tracker *t, camtrak_box box)
 {
     return sqrtf((box.w / t->tw) * (box.h / t->th));
 }
 
-tether_error tether_verify(tether_tracker *t, const tether_frame *frame, tether_box box,
-                           tether_verdict *out)
+camtrak_error camtrak_verify(camtrak_tracker *t, const camtrak_frame *frame, camtrak_box box,
+                           camtrak_verdict *out)
 {
     float cx, cy, ratio, best = 0.0f;
     float *psr = &best;
     tt_match a, b;
 
     if (!t || !out || !tt_frame_valid(frame) || !box_valid(frame, box)) {
-        return TETHER_ERR_INVALID_ARG;
+        return CAMTRAK_ERR_INVALID_ARG;
     }
     if (!t->locked) {
-        return TETHER_ERR_NOT_LOCKED;
+        return CAMTRAK_ERR_NOT_LOCKED;
     }
     cx = box.x + 0.5f * box.w;
     cy = box.y + 0.5f * box.h;
     ratio = box_ratio(t, box);
     a = detect_with(t, &t->mosse, frame, cx, cy, ratio);
     b = detect_with(t, &t->anchor, frame, cx, cy, ratio);
-    /* the peak must also be near the box centre, not somewhere else in the window */
+    /* the peak must also be near the box center, not somewhere else in the window */
     *psr = 0.0f;
     if (hypotf(a.x - cx, a.y - cy) <= 0.5f * fminf(box.w, box.h)) *psr = a.pk.psr;
     if (hypotf(b.x - cx, b.y - cy) <= 0.5f * fminf(box.w, box.h)) *psr = fmaxf(*psr, b.pk.psr);
@@ -700,16 +706,16 @@ tether_error tether_verify(tether_tracker *t, const tether_frame *frame, tether_
     out->color = tt_color_match(&t->color, frame, box);
     out->accept = color_ok(out->color) && candidate_plausible(t, frame, box)
         && best >= (out->color >= TT_COLOR_STRONG ? TT_VERIFY_PSR_STRONG_COLOR : TT_VERIFY_PSR);
-    return TETHER_OK;
+    return CAMTRAK_OK;
 }
 
-tether_error tether_reacquire(tether_tracker *t, const tether_frame *frame, tether_box box)
+camtrak_error camtrak_reacquire(camtrak_tracker *t, const camtrak_frame *frame, camtrak_box box)
 {
     if (!t || !tt_frame_valid(frame) || !box_valid(frame, box)) {
-        return TETHER_ERR_INVALID_ARG;
+        return CAMTRAK_ERR_INVALID_ARG;
     }
     if (!t->locked) {
-        return TETHER_ERR_NOT_LOCKED;
+        return CAMTRAK_ERR_NOT_LOCKED;
     }
     set_scale(t, frame, t->scale * box_ratio(t, box));
     start_tracking_at(t, box.x + 0.5f * box.w, box.y + 0.5f * box.h);
@@ -725,28 +731,28 @@ tether_error tether_reacquire(tether_tracker *t, const tether_frame *frame, teth
     if (t->use_scale) {
         tt_scale_train(&t->sc, frame, &t->lut, t->cx, t->cy, t->tw, t->th);
     }
-    return TETHER_OK;
+    return CAMTRAK_OK;
 }
 
-tether_error tether_get_debug(const tether_tracker *t, tether_debug *out)
+camtrak_error camtrak_get_debug(const camtrak_tracker *t, camtrak_debug *out)
 {
     if (!t || !out) {
-        return TETHER_ERR_INVALID_ARG;
+        return CAMTRAK_ERR_INVALID_ARG;
     }
     if (!t->locked) {
-        return TETHER_ERR_NOT_LOCKED;
+        return CAMTRAK_ERR_NOT_LOCKED;
     }
     *out = t->dbg;
-    return TETHER_OK;
+    return CAMTRAK_OK;
 }
 
-tether_error tether_scene_cut(tether_tracker *t)
+camtrak_error camtrak_scene_cut(camtrak_tracker *t)
 {
     if (!t) {
-        return TETHER_ERR_INVALID_ARG;
+        return CAMTRAK_ERR_INVALID_ARG;
     }
     if (!t->locked) {
-        return TETHER_ERR_NOT_LOCKED;
+        return CAMTRAK_ERR_NOT_LOCKED;
     }
     enter_lost(t);
     /* The size from the previous shot means nothing now (the target may have
@@ -757,5 +763,5 @@ tether_error tether_scene_cut(tether_tracker *t)
     t->step = t->base_step;
     t->tw = t->base_w;
     t->th = t->base_h;
-    return TETHER_OK;
+    return CAMTRAK_OK;
 }

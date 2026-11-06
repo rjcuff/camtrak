@@ -6,7 +6,7 @@ make_ground_clip - synthetic aerial test video: vehicles on busy terrain.
 A drone looks down on fields, roads, buildings and trees (textured: a
 "stands out from a plain background" detector cannot work here). The camera
 pans, slowly rotates and zooms. Eight vehicles drive along different headings
-at different speeds; some are low contrast (grey car on grey road), one
+at different speeds; some are low contrast (gray car on gray road), one
 stops halfway. Writes clips/ground.truth.csv (frame,id,x,y,w,h) for
 tools/score_multi.py.
 """
@@ -69,12 +69,12 @@ def main() -> int:
     rng = np.random.default_rng(a.seed)
     world = terrain(rng)
 
-    # id, start (world), heading, speed px/s, length, width, colour BGR, stop time
+    # id, start (world), heading, speed px/s, length, width, color BGR, stop time
     cars = [
         (1, (700, 600), 0.10, 70, 26, 12, (40, 40, 200), None),
         (2, (1500, 500), 2.90, 55, 22, 11, (230, 230, 230), None),
         (3, (900, 1100), -0.60, 90, 24, 11, (30, 30, 30), None),
-        (4, (1300, 800), 1.70, 45, 20, 10, (100, 100, 104), None),     # grey on grey: low contrast
+        (4, (1300, 800), 1.70, 45, 20, 10, (100, 100, 104), None),     # gray on gray: low contrast
         (5, (1100, 650), -2.40, 60, 28, 13, (200, 120, 30), 6.0),      # stops at 6 s
         (6, (1600, 1000), -1.30, 80, 18, 9, (40, 190, 220), None),
         (7, (850, 850), 0.80, 35, 22, 10, (180, 60, 150), None),
@@ -96,7 +96,7 @@ def main() -> int:
                 poly = vehicle_poly(cx, cy, hd, L, Wd)
                 cv2.fillPoly(canvas, [poly.astype(np.int32)], col, cv2.LINE_AA)
                 polys.append((cid, poly))
-            # camera: centre drifts, slow rotation and zoom
+            # camera: center drifts, slow rotation and zoom
             cam_x = 1200 + 260 * math.sin(0.20 * t)
             cam_y = 850 + 160 * math.sin(0.27 * t + 1)
             ang = 4.0 * math.sin(0.3 * t)
