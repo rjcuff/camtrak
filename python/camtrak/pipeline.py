@@ -33,6 +33,7 @@ import numpy as np
 
 from . import COASTING, LOST, TRACKING
 from .detect import AutoDetector, CutDetector, refine_box, snap_box
+from .extent import tighten
 from .multi import MultiTracker, Target
 from .render import THEMES, Renderer, bgr_hex
 
@@ -76,12 +77,12 @@ class Pipeline:
                  cut_detect: bool = True, max_targets: int = 60, auto_every: int = 3,
                  sensitivity: float = 6.0, motion: bool = True, theme: str = "camtrak",
                  labels: bool = True, focus_card: bool = True, trails: bool | None = None,
-                 **tracker_params: float) -> None:
+                 extent: bool = True, **tracker_params: float) -> None:
         self.fps = fps
         self.auto = auto
         self.max_targets = max_targets
         self.auto_every = max(1, auto_every)
-        self.tracks = MultiTracker(fps=fps, ml=ml, **tracker_params)
+        self.tracks = MultiTracker(fps=fps, ml=ml, extent=extent, **tracker_params)
         self.detector = AutoDetector(sensitivity=sensitivity, motion=motion)
         self.cuts = CutDetector() if cut_detect else None
         self.theme = theme
@@ -104,7 +105,9 @@ class Pipeline:
                 raise ValueError("give box=(x, y, w, h) or point=(x, y)")
             box = snap_box(frame, float(point[0]), float(point[1]))
         elif refine:
-            box = refine_box(frame, tuple(float(v) for v in box))
+            box = tuple(float(v) for v in box)
+            tight = tighten(frame, box) if frame.ndim == 3 else box
+            box = tight if tight != box else refine_box(frame, box)
         tid = self.tracks.add(frame, box)
         if focus:
             self.set_focus(tid)
@@ -156,7 +159,7 @@ class Pipeline:
             if why == "static":
                 self.detector.forget(box)
         if self.auto and self.index % self.auto_every == 0:
-            for box in self.detector.candidates(frame):
+            for box in self.detector.candidates(frame, skip=self.tracks.overlaps):
                 if len(self.tracks) >= self.max_targets:
                     break
                 if not self.tracks.overlaps(box):

@@ -147,6 +147,16 @@ CAMTRAK_API camtrak_error camtrak_reacquire(camtrak_tracker *t, const camtrak_fr
                                          camtrak_box box);
 
 /*
+ * Adjust the tracked box (position and size) without a re-detection, e.g.
+ * from an external estimate of the object's extent. The box keeps the
+ * lock-time aspect ratio (its size is set from the box's area). relearn = 1
+ * also teaches the appearance model the view at the new position (use when
+ * moving the center); 0 only moves/resizes the box.
+ */
+CAMTRAK_API camtrak_error camtrak_set_box(camtrak_tracker *t, const camtrak_frame *frame,
+                                          camtrak_box box, int relearn);
+
+/*
  * Diagnostics: what the tracker did inside the last camtrak_update().
  * For logging and tuning only; fields may change between versions.
  */

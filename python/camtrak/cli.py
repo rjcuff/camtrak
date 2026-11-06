@@ -71,6 +71,8 @@ def parse_args(argv):
     p.add_argument("--point", type=parse_point, action="append", default=[],
                    help="start with the object at x,y; box found automatically (repeatable)")
     p.add_argument("--start", type=int, default=0, help="frame to start on (files only)")
+    p.add_argument("--width", type=int, default=0,
+                   help="scale wider video down to this width first (e.g. 1920 for 4K input; faster)")
     p.add_argument("--auto", action="store_true", help="find objects automatically")
     p.add_argument("--auto-every", type=int, default=3, help="auto: look for new objects every N frames")
     p.add_argument("--max-targets", type=int, default=60, help="auto: never track more than this")
@@ -90,6 +92,8 @@ def parse_args(argv):
                    help="no magnified focus card")
     p.add_argument("--no-trails", action="store_true", help="do not draw recent paths")
     p.add_argument("--no-cut-detect", action="store_true", help="do not look for scene cuts")
+    p.add_argument("--no-fit", action="store_true",
+                   help="do not fit boxes to the object with the color model (box size from the tracker alone)")
     p.add_argument("--exact-boxes", action="store_true",
                    help="use drawn / --bbox boxes as given (default: tighten loose boxes onto the object)")
     return p.parse_args(argv)
@@ -131,12 +135,13 @@ class Mouse:
 class App:
     def __init__(self, args) -> None:
         self.a = args
-        self.src = open_source(args.source)
+        self.src = open_source(args.source, args.width)
         self.pipe = Pipeline(self.src.fps, auto=args.auto, ml=not args.no_ml,
                              cut_detect=not args.no_cut_detect, max_targets=args.max_targets,
                              auto_every=args.auto_every, sensitivity=args.sensitivity,
                              motion=not args.no_motion, theme=args.theme, labels=not args.no_labels,
-                             focus_card=not args.no_card, trails=False if args.no_trails else None)
+                             focus_card=not args.no_card, trails=False if args.no_trails else None,
+                             extent=not args.no_fit)
         self.mouse: Mouse | None = None
         self.scale = 1.0
         self.live_fps = 0.0
@@ -329,6 +334,10 @@ class App:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    try:   # OpenCV's DNN backend prints a harmless warning per neural-model init
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+    except AttributeError:
+        pass
     try:
         return App(args).run()
     except (OSError, FileNotFoundError) as exc:

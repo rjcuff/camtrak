@@ -64,6 +64,9 @@ class Target:
     confirmed: bool = True             # False while a tentative target is on probation
     anchor: tuple[float, float] | None = None    # where it would be if it were scenery
     plain_frames: int = 0              # confident frames with no camera motion available
+    extent: object = None              # ExtentModel: the target's colors vs its surroundings
+    absent: int = 0                    # consecutive frames with no target colors at the box
+    fit_off: int = 0                   # consecutive frames the color blob sat off-center
     moving: int = 0                    # consecutive frames away from the scenery anchor
 
     @property
@@ -101,7 +104,7 @@ class MultiTracker:
     def __init__(self, fps: float = 30.0, *, ml: bool = True, ml_max: int = 4,
                  auto_drop: int | None = None, duplicate_iou: float = 0.5,
                  speed_smoothing: float = 0.25, probation: int | None = None,
-                 confirm_plain: int = 6, **params: float) -> None:
+                 confirm_plain: int = 6, extent: bool = True, **params: float) -> None:
         """
         fps            frame rate, for px/s speeds
         ml             give user-picked targets the neural second opinion if available
@@ -111,6 +114,7 @@ class MultiTracker:
         probation      tentative targets that have not moved relative to the scene
                        within this many frames are dropped (default: 2 s)
         confirm_plain  without camera motion, confirm after this many confident frames
+        extent         keep each box fitted to its object with a color model (needs OpenCV)
         params         tracker tuning, passed to every Tracker (see camtrak.h)
         """
         self.fps = float(fps) if fps and fps > 0 else 30.0
@@ -121,6 +125,12 @@ class MultiTracker:
         self.alpha = speed_smoothing
         self.probation = probation if probation is not None else int(round(2 * self.fps))
         self.confirm_plain = confirm_plain
+        self.extent = extent
+        if extent:
+            try:
+                from .extent import ExtentModel  # noqa: F401
+            except ImportError:
+                self.extent = False
         self.params = params
         self._targets: dict[int, Target] = {}
         self._next_id = 1
@@ -163,6 +173,12 @@ class MultiTracker:
         tid = self._next_id
         self._next_id += 1
         t = Target(tid, source, trk, Result(box, 1.0, 0.0, TRACKING), confirmed=not tentative)
+        # color fit for targets the user picked (their boxes can be loose); auto
+        # targets come from detectors that already box them tightly, and on busy
+        # terrain small objects' color models are too weak to steer by
+        if self.extent and frame.ndim == 3 and source == "user":
+            from .extent import ExtentModel
+            t.extent = ExtentModel(frame, box)
         t.anchor = t.center
         t.trail.append(t.center)
         self._targets[tid] = t
@@ -215,6 +231,8 @@ class MultiTracker:
         for t in list(self._targets.values()):     # copy: probation may remove targets
             prev = t.center
             t.result = t.tracker.update(frame)
+            if t.extent is not None and t.extent.ok and t.status != LOST:
+                self._fit_extent(t, frame)
             t.age += 1
             self._update_motion(t, prev)
             t.lost_frames = t.lost_frames + 1 if t.status == LOST else 0
@@ -243,6 +261,38 @@ class MultiTracker:
         vx, vy = dx * self.fps, dy * self.fps
         t.velocity = ((1 - a) * t.velocity[0] + a * vx, (1 - a) * t.velocity[1] + a * vy)
         t.trail.append((cx, cy))
+
+    MAX_FIT_STEP = 0.03   # most the color fit may change the box size in one frame
+    FIT_RECENTER = 8      # frames the color blob must sit off-center before re-centering
+    ABSENT_LIMIT = 6      # frames with no target colors before a "locked" claim is withdrawn
+
+    def _fit_extent(self, t: Target, frame: np.ndarray) -> None:
+        """Keep the box on the object's real extent, and the status honest."""
+        fit, present = t.extent.fit(frame, t.box)
+        t.absent = 0 if present else t.absent + 1
+        if fit is not None and t.status == TRACKING:
+            x, y, w, h = t.box
+            fx, fy, fw, fh = fit
+            cx, cy = x + w / 2, y + h / 2
+            r = float(np.sqrt(max(1.0, fw * fh) / max(1.0, w * h))) ** 0.25
+            r = min(1.0 + self.MAX_FIT_STEP, max(1.0 - self.MAX_FIT_STEP, r))
+            dx, dy = fx + fw / 2 - cx, fy + fh / 2 - cy
+            t.fit_off = t.fit_off + 1 if np.hypot(dx, dy) > 0.25 * max(w, h) else 0
+            relearn = t.fit_off >= self.FIT_RECENTER
+            if relearn:
+                cx, cy = cx + 0.5 * dx, cy + 0.5 * dy
+                t.fit_off = 0
+            if abs(r - 1.0) > 0.002 or relearn:
+                nw, nh = w * r, h * r
+                nbox = (cx - nw / 2, cy - nh / 2, nw, nh)
+                try:
+                    t.tracker.set_box(frame, nbox, relearn)
+                    t.result = Result(nbox, t.result.confidence, t.result.psr, t.result.status)
+                except Exception:   # box left the frame etc.: keep the tracker's own box
+                    pass
+        if t.absent >= self.ABSENT_LIMIT and t.status == TRACKING:
+            # the tracker is confident, but nothing under the box looks like the target
+            t.result = Result(t.box, min(t.result.confidence, 0.3), t.result.psr, COASTING)
 
     SETTLE = 4          # frames a new tracker needs to center itself on the object
     SUSTAIN = 4         # consecutive frames the scene-relative movement must hold

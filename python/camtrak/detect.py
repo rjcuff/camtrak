@@ -62,7 +62,7 @@ def _ring_colors(win: np.ndarray, k: int = 5) -> np.ndarray:
 
 
 def snap_box(frame: np.ndarray, x: float, y: float, *, min_side: float = 12,
-             fallback: float = 40, max_half: int = 320) -> Box:
+             fallback: float = 40, max_half: int = 0) -> Box:
     """
     Box around the object at (x, y). Never fails; worst case a fixed square.
 
@@ -76,6 +76,8 @@ def snap_box(frame: np.ndarray, x: float, y: float, *, min_side: float = 12,
     lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB) if frame.ndim == 3 else frame[:, :, None]
     lab = lab.astype(np.float32)
     best_box, best_area = None, 0
+    if max_half <= 0:   # default: big enough for an object filling most of the frame height
+        max_half = max(320, int(0.5 * min(H, W)))
     half = 20.0
     while half <= max_half:
         x0, y0 = int(max(0, x - half)), int(max(0, y - half))
@@ -175,8 +177,9 @@ class BlobDetector:
         # morphological closing it does not bridge neighboring objects
         bg = cv2.medianBlur(small, k)
         resp = cv2.absdiff(small, bg).astype(np.float32)
-        med = float(np.median(resp))
-        mad = float(np.median(np.abs(resp - med))) * 1.4826 + 1.0
+        sub = resp[::3, ::3]                     # a subsample estimates the noise level just as well
+        med = float(np.median(sub))
+        mad = float(np.median(np.abs(sub - med))) * 1.4826 + 1.0
         thr = max(14.0, med + self.sensitivity * mad)
         mask = (resp > thr).astype(np.uint8)
         # busy-ness map: share of strong-ish pixels in a neighborhood
@@ -416,7 +419,9 @@ class AutoDetector:
             return s
         return box
 
-    def candidates(self, frame: np.ndarray) -> list[Box]:
+    def candidates(self, frame: np.ndarray, skip=None) -> list[Box]:
+        """New-object boxes. skip(box) -> True for boxes already tracked: they are
+        dropped before the (costly) re-boxing of motion blobs."""
         cam = self._since_pass
         out = self.blobs.confirm(frame, cam)
         if self.motion:
@@ -430,7 +435,8 @@ class AutoDetector:
                 prev = []
             for b, (cx, cy, size) in zip(boxes, now):
                 if any(np.hypot(cx - px, cy - py) <= max(40.0, size) for px, py, _ in prev):
-                    out.append(self._center(frame, b))
+                    if skip is None or not skip(b):
+                        out.append(self._center(frame, b))
             self._prev_motion = now
         self._since_pass = np.eye(3)[:2]
         # merge overlapping candidates from the two detectors, drop known scenery

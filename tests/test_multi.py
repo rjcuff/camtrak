@@ -75,6 +75,32 @@ def main() -> int:
         check("ground coverage", g["coverage"] >= 75, f"{g['coverage']}% of object-frames (>= 75)")
         check("ground false", g["false"] <= 40, f"{g['false']}% of track-frames (<= 40)")
 
+        # a loose hand-drawn box (2.5x the object) must tighten and stay on the object
+        rows6 = {int(r["frame"]): tuple(float(r[k]) for k in "xywh")
+                 for r in csv.DictReader(open(truth)) if r["id"] == "6"}
+        f0 = min(rows6)
+        x, y, w, h = rows6[f0]
+        cap = cv2.VideoCapture(str(clip))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, f0)
+        _, frame0 = cap.read()
+        pipe = tt.Pipeline(30, ml=False)
+        tid = pipe.add(frame0, box=(x + w / 2 - 1.25 * w, y + h / 2 - 1.25 * h, 2.5 * w, 2.5 * h))
+        held = sized = n = 0
+        for i in range(f0 + 1, f0 + 150):
+            ok_, fr = cap.read()
+            if not ok_ or i not in rows6:
+                break
+            pipe.process(fr)
+            t = pipe.tracks.get(tid)
+            gx, gy, gw, gh = rows6[i]
+            cx, cy = t.center
+            n += 1
+            held += abs(cx - gx - gw / 2) < 0.6 * gw and abs(cy - gy - gh / 2) < 0.6 * gh
+            sized += t.box[2] * t.box[3] < 3.0 * gw * gh
+        cap.release()
+        check("loose box", n > 100 and held >= 0.95 * n and sized >= 0.9 * n,
+              f"{100 * held / max(1, n):.0f}% on the object, box under 3x its size {100 * sized / max(1, n):.0f}%")
+
         # click-to-lock on frame 0
         rows = [r for r in csv.DictReader(open(truth)) if r["frame"] == "0"]
         cap = cv2.VideoCapture(str(clip))

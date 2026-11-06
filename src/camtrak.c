@@ -709,6 +709,32 @@ camtrak_error camtrak_verify(camtrak_tracker *t, const camtrak_frame *frame, cam
     return CAMTRAK_OK;
 }
 
+camtrak_error camtrak_set_box(camtrak_tracker *t, const camtrak_frame *frame, camtrak_box box,
+                              int relearn)
+{
+    if (!t || !tt_frame_valid(frame) || !box_valid(frame, box)) {
+        return CAMTRAK_ERR_INVALID_ARG;
+    }
+    if (!t->locked) {
+        return CAMTRAK_ERR_NOT_LOCKED;
+    }
+    set_scale(t, frame, t->scale * box_ratio(t, box));
+    /* move the position, keep the motion model's velocity */
+    t->kf.x.p = t->cx = box.x + 0.5f * box.w;
+    t->kf.y.p = t->cy = box.y + 0.5f * box.h;
+    if (!t->lost) {
+        t->good_x = t->cx;
+        t->good_y = t->cy;
+    }
+    if (relearn) {
+        learn_at(t, frame, t->cx, t->cy);
+        if (t->use_scale) {
+            tt_scale_train(&t->sc, frame, &t->lut, t->cx, t->cy, t->tw, t->th);
+        }
+    }
+    return CAMTRAK_OK;
+}
+
 camtrak_error camtrak_reacquire(camtrak_tracker *t, const camtrak_frame *frame, camtrak_box box)
 {
     if (!t || !tt_frame_valid(frame) || !box_valid(frame, box)) {

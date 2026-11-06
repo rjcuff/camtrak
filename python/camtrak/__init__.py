@@ -120,6 +120,8 @@ def _load() -> C.CDLL:
     lib.camtrak_verify.argtypes = [C.c_void_p, C.POINTER(_Frame), _Box, C.POINTER(_Verdict)]
     lib.camtrak_reacquire.restype = C.c_int
     lib.camtrak_reacquire.argtypes = [C.c_void_p, C.POINTER(_Frame), _Box]
+    lib.camtrak_set_box.restype = C.c_int
+    lib.camtrak_set_box.argtypes = [C.c_void_p, C.POINTER(_Frame), _Box, C.c_int]
     lib.camtrak_scene_cut.restype = C.c_int
     lib.camtrak_scene_cut.argtypes = [C.c_void_p]
     lib.camtrak_version.restype = C.c_char_p
@@ -218,6 +220,12 @@ class Tracker:
         """Move onto bbox keeping the learned appearance; TRACKING resumes next frame."""
         f, _keep = _as_frame(frame)
         _check(_lib.camtrak_reacquire(self._h, C.byref(f), _Box(*(float(v) for v in bbox))))
+
+    def set_box(self, frame: np.ndarray, bbox, relearn: bool = False) -> None:
+        """Move / resize the tracked box (keeps the lock-time aspect ratio).
+        relearn: also learn the view at the new position."""
+        f, _keep = _as_frame(frame)
+        _check(_lib.camtrak_set_box(self._h, C.byref(f), _Box(*(float(v) for v in bbox)), int(relearn)))
 
     def scene_cut(self) -> None:
         """The next frame is a different shot: skip coasting and start searching."""

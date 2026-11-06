@@ -25,8 +25,10 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
 class Source:
-    def __init__(self, spec: str | int | Path) -> None:
+    def __init__(self, spec: str | int | Path, max_width: int = 0) -> None:
+        """max_width: scale frames wider than this down (keeps aspect); 0 = as is."""
         self.spec = str(spec)
+        self.max_width = max_width
         self.live = False
         self._images: list[Path] | None = None
         self._cap = None
@@ -63,7 +65,16 @@ class Source:
     def next(self) -> np.ndarray | None:
         return self.read(self._next)
 
+    def _fit(self, img: np.ndarray | None) -> np.ndarray | None:
+        if img is None or not self.max_width or img.shape[1] <= self.max_width:
+            return img
+        s = self.max_width / img.shape[1]
+        return cv2.resize(img, (self.max_width, round(img.shape[0] * s)), interpolation=cv2.INTER_AREA)
+
     def read(self, index: int) -> np.ndarray | None:
+        return self._fit(self._read(index))
+
+    def _read(self, index: int) -> np.ndarray | None:
         if self.live:
             ok, img = self._cap.read()
             self._next += 1
@@ -90,5 +101,5 @@ class Source:
         self.close()
 
 
-def open_source(spec: str | int | Path) -> Source:
-    return Source(spec)
+def open_source(spec: str | int | Path, max_width: int = 0) -> Source:
+    return Source(spec, max_width)

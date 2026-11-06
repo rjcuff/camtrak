@@ -137,6 +137,9 @@ class MLTracker:
         self._remember_good(frame, bbox)
         self._rejections = 0
 
+    def set_box(self, frame: np.ndarray, bbox, relearn: bool = False) -> None:
+        self.tracker.set_box(frame, bbox, relearn)
+
     def scene_cut(self) -> None:
         self.tracker.scene_cut()
 
