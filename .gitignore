@@ -5,3 +5,4 @@ clips/
 *.o
 __pycache__/
 *.pyc
+.venv/

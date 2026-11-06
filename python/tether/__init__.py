@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-__all__ = ["Tracker", "MLTracker", "Result", "TRACKING", "COASTING", "LOST", "TetherError"]
+__all__ = ["Tracker", "MLTracker", "MultiTracker", "Target", "Result", "TRACKING", "COASTING", "LOST", "TetherError"]
 
 TRACKING, COASTING, LOST = 0, 1, 2
 _STATUS_NAMES = {TRACKING: "TRACKING", COASTING: "COASTING", LOST: "LOST"}
@@ -51,7 +51,8 @@ class _Params(C.Structure):
                 ("lambda_", C.c_float), ("psr_update", C.c_float), ("psr_track", C.c_float),
                 ("kalman_q", C.c_float), ("kalman_r", C.c_float), ("coast_damping", C.c_float),
                 ("lost_after", C.c_int), ("psr_reacquire", C.c_float),
-                ("reacquire_budget", C.c_int), ("scale_step", C.c_float)]
+                ("reacquire_budget", C.c_int), ("scale_step", C.c_float),
+                ("adaptive_color", C.c_int)]
 
 
 class _Debug(C.Structure):
@@ -59,7 +60,8 @@ class _Debug(C.Structure):
     _fields_ = [("pred_x", C.c_float), ("pred_y", C.c_float), ("vel_x", C.c_float),
                 ("vel_y", C.c_float), ("scale", C.c_float), ("scale_factor", C.c_float),
                 ("misses", C.c_int), ("lost_frames", C.c_int), ("search_rings", C.c_int),
-                ("used_anchor", C.c_int), ("learned", C.c_int), ("windows_tried", C.c_int)]
+                ("used_anchor", C.c_int), ("learned", C.c_int), ("windows_tried", C.c_int),
+                ("channel_gain", C.c_float)]
 
 
 class _Verdict(C.Structure):
@@ -229,4 +231,5 @@ class Tracker:
 
 
 from .ml import MLTracker  # noqa: E402  (needs OpenCV only when used)
+from .multi import MultiTracker, Target  # noqa: E402
 

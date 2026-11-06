@@ -83,7 +83,8 @@ struct tether_tracker {
     tt_mosse  anchor; /* frozen copy from lock time: what the user selected */
     int       lost_frames; /* frames spent LOST (alternates the re-detection model) */
     tether_debug dbg;      /* what the last update did, for tether_get_debug */
-    tt_log_lut lut;   /* log(1 + v) table used by patch sampling */
+    tt_log_lut lut;   /* log(1 + v) table + BGR->channel weights used by patch sampling */
+    float channel_gain; /* separability of the chosen channel vs brightness, from lock */
     tt_scale  sc;     /* size estimator; unused when scale_step <= 1 */
     tt_color  color;  /* colour model of the selection (BGR input only) */
     int       use_scale;
@@ -128,6 +129,7 @@ tether_params tether_default_params(void)
     p.psr_reacquire    = 14.0f;
     p.reacquire_budget = 24;
     p.scale_step       = 1.04f;   /* scale filter samples sizes 1.04^-8 .. 1.04^8 (-27%..+37%) */
+    p.adaptive_color   = 1;
     return p;
 }
 
@@ -144,7 +146,8 @@ static int params_valid(const tether_params *p)
         && p->coast_damping >= 0.0f && p->coast_damping <= 1.0f
         && p->lost_after >= 1
         && p->reacquire_budget >= 1 && p->reacquire_budget <= 1024
-        && (p->scale_step == 0.0f || (p->scale_step >= 1.0f && p->scale_step <= 1.5f));
+        && (p->scale_step == 0.0f || (p->scale_step >= 1.0f && p->scale_step <= 1.5f))
+        && (p->adaptive_color == 0 || p->adaptive_color == 1);
 }
 
 /* ------------------------------------------------------------- lifecycle */
@@ -381,6 +384,12 @@ tether_error tether_lock(tether_tracker *t, const tether_frame *frame, tether_bo
         return TETHER_ERR_NO_MEMORY;
     }
     tt_make_hann(t->pw, t->ph, t->window);
+
+    /* which channel to track in: brightness, or a colour projection that
+     * separates this target from its surroundings better */
+    t->channel_gain = t->p.adaptive_color
+        ? tt_choose_channel(frame, box.x + 0.5f * box.w, box.y + 0.5f * box.h, box.w, box.h, &t->lut)
+        : (tt_make_log_lut(&t->lut), 1.0f);
 
     start_tracking_at(t, box.x + 0.5f * box.w, box.y + 0.5f * box.h);
 
@@ -653,6 +662,7 @@ tether_error tether_update(tether_tracker *t, const tether_frame *frame, tether_
     t->dbg.vel_x = t->kf.x.v;
     t->dbg.vel_y = t->kf.y.v;
     t->dbg.scale = t->scale;
+    t->dbg.channel_gain = t->channel_gain;
     t->dbg.misses = t->misses;
     t->dbg.lost_frames = t->lost ? t->lost_frames : 0;
     return TETHER_OK;

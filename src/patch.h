@@ -10,12 +10,31 @@
 /* 1 if the frame is usable (non-null data, positive size, sane stride/format). */
 int tt_frame_valid(const tether_frame *f);
 
-/* log(1 + v) for every pixel value v: filled by tt_make_log_lut. */
+/*
+ * log(1 + v) for every channel value v, plus how a BGR pixel becomes that one
+ * channel: v = clamp((wb*B + wg*G + wr*R + off) >> 8, 0, 255). The default is
+ * luma; tt_choose_channel() may switch a tracker to a colour projection.
+ */
 typedef struct {
     float v[256];
+    int wb, wg, wr, off;
 } tt_log_lut;
 
+/* Fill the log table and set the channel to luma. */
 void tt_make_log_lut(tt_log_lut *lut);
+
+/*
+ * Pick the channel the tracker sees, for the box (cx, cy, w, h) on a BGR frame.
+ * Luma loses colour contrast (a red car on a brown field has nearly the same
+ * brightness), so we compare luma with Fisher's linear discriminant of
+ * target vs surrounding pixels (and blends of the two) and keep whichever
+ * separates the target best; luma unless a colour projection is clearly
+ * better. The chosen projection is stretched over the colours seen, so the
+ * 8-bit channel keeps its resolution. Gray frames: luma, returns 1.
+ * Returns separability(chosen) / separability(luma), >= 1.
+ */
+float tt_choose_channel(const tether_frame *f, float cx, float cy, float w, float h,
+                        tt_log_lut *lut);
 
 /*
  * Sample a w x h patch of log(1 + gray) values centred on (cx, cy).

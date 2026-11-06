@@ -16,7 +16,8 @@ The core is plain C11 with no dependencies beyond the C standard library.
 | 5 | Scale estimation (DSST-style scale filter) | done |
 | 5b | Scene-cut handling, clean "anchor" model for re-acquisition | done |
 | 6 | Colour model (veto look-alikes), ML second opinion (VitTrack), verify/reacquire API, run logs | done |
-| later | HOG/colour features, multi-target, ONNX verifier, Python/Node bindings, CLI demo, OpenCV comparison bench | |
+| 7 | Multi-target (`MultiTracker`), click-to-lock, auto-detect small objects, targeting HUD with speed + close-up | done |
+| later | HOG/colour features, ONNX verifier, Python/Node bindings, OpenCV comparison bench | |
 
 ## Build
 
@@ -30,10 +31,98 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+Without CMake (macOS / Linux):
+
+```sh
+./build.sh test
+```
+
 Windows (Visual Studio 2022 or Build Tools with the C++ workload):
 
 ```bat
 build.bat
+```
+
+## HUD: track many objects at once
+
+`demo/tether_hud.py` tracks any number of objects and draws a targeting
+overlay: corner brackets, a centre dot, and a panel per target with
+`TRK ID: n [LOCKED]`, its position and its speed in px/s, plus a magnified
+close-up of one target in the bottom-right corner. Red = LOCKED, amber =
+COASTING, grey = SEARCHING.
+
+```sh
+# pick targets yourself: click an object to lock it (box sized automatically), or drag a box
+python demo/tether_hud.py --source clip.mp4 --display
+
+# let it find small objects against sky / snow by itself (aircraft, birds, drones, skiers)
+python demo/tether_hud.py --source airshow.mp4 --auto --display
+
+# unattended: save the annotated video and a per-target CSV
+python demo/tether_hud.py --source clip.mp4 --auto --output out.mp4 --csv out.csv
+python demo/tether_hud.py --source clip.mp4 --point 640,360 --bbox 100,80,40,30 --output out.mp4
+```
+
+**In the window** (before playback and while playing): left click = lock the
+object under the cursor; left drag = lock exactly that box; right click = drop
+a target; Tab = choose which target the close-up shows; `x` = auto-detect
+on/off; `c` = drop all; space = pause (and start, in the picker); `a`/`d` =
+pick the start frame; `q` = quit. You can add targets at any moment, paused or
+not.
+
+**How it works.** Each target has its own Tether tracker (0.2-0.6 ms each),
+so dozens of targets stay real time; the first 4 targets you pick also get the
+ML second opinion. *Click-to-lock* (`demo/detect.py: snap_box`) grows a window
+around the click until the object fits, treats the window's border colours as
+background, and boxes the blob under the click. *Auto mode*
+(`BlobDetector`) subtracts a median-filtered background, keeps compact
+blobs that stand out from a plain surrounding (tree lines, crowds and cloud
+edges are rejected as clutter), and spawns a target only when a blob is seen
+on two passes in a row. Auto targets are dropped when they leave the frame,
+stay unconfirmed for 1 s, or land on an object that is already tracked; your
+own targets are never dropped. At a scene cut, auto targets are cleared and
+re-detected, and yours start searching.
+
+**Busy backgrounds.** On textured ground (vehicles seen from a drone, people
+on a pitch) "stands out" is not enough: every tree does. Auto mode then
+measures the camera's motion (features + RANSAC), finds things that move
+relative to the scene (`MotionDetector`: frames aligned to cancel the camera,
+current frame compared with two earlier ones), and puts every new auto
+target on probation: it is only shown once it has moved relative to the
+scenery; one that moves with the camera is a tree or a building and is
+dropped, and that spot is remembered.
+
+**Colour.** The correlation tracker sees one channel. Brightness alone loses
+colour contrast (a red car on a brown field has about the same brightness),
+so at lock time Tether compares brightness with the colour projection that
+best separates the target from its surroundings (Fisher discriminant) and
+tracks in that when it is clearly better (`adaptive_color`, default on).
+
+Synthetic clips with ground truth, scored with `tools/score_multi.py`
+(coverage = object-frames with a track within 15 px):
+
+| Clip | Mode | Coverage | False track-frames | ID switches |
+|---|---|---|---|---|
+| sky, 10 aircraft/birds, 3 seeds (`tools/make_sky_clip.py`) | `--auto` | 97-98% | 0.4-0.5% | 0 |
+| sky | one click per object | 100% of clicked | 0.7% | 0 |
+| aerial terrain, 8 vehicles, moving camera, 3 seeds (`tools/make_ground_clip.py`) | `--auto` | 73-86% | 12-29% | 1-7 |
+
+Tracking from exact boxes on the terrain clips: 62-75% of frames within
+15 px with brightness only, 86-98% with the adaptive colour channel.
+Known weak spot: a box that starts looser than the object can slowly grow
+into the background (most of the false track-frames on terrain are such
+boxes on real vehicles).
+
+On a 66 s, 1080p, 24-cut montage (jets, bikes, F1, skiers, birds) `--auto`
+costs 5-10 ms/frame for camera motion + tracking. `python tests/test_multi.py`
+gates these numbers.
+
+```python
+import tether as tt
+mt = tt.MultiTracker(fps=30)
+a = mt.add(frame, (x, y, w, h))              # returns the ID
+for t in mt.update(next_frame):
+    print(t.id, t.label, t.center, t.speed)  # LOCKED / COASTING / SEARCHING, px/s
 ```
 
 ## Demo: track a video
@@ -139,7 +228,11 @@ src/fft.[ch]              radix-2 1D/2D FFT with precomputed plans
 src/patch.[ch]            patch sampling (bilinear, gray/BGR), log + normalise + cosine window
 src/mosse.[ch]            MOSSE filter: train, update, respond, sub-pixel peak
 src/tether.c              tracker state and the per-frame pipeline
-tests/                    FFT vs naive DFT, API validation, synthetic tracking + speed
+tests/                    FFT vs naive DFT, API validation, synthetic tracking + speed,
+                          test_multi.py (multi-target / auto / click-to-lock gate)
+python/tether/multi.py    MultiTracker: many targets, IDs, speeds, pruning
+demo/tether_hud.py        multi-target app with the targeting HUD
+demo/hud.py, detect.py    HUD drawing; click-to-lock and auto-detect
 ```
 
 ## How the tracker decides TRACKING / COASTING / LOST

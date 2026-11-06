@@ -96,6 +96,10 @@ typedef struct {
     int   reacquire_budget; /* search windows tried per LOST frame (default 24) */
     float scale_step;     /* size estimation: ratio between the 17 sizes the scale filter
                              compares (default 1.04; 0 or 1 = fixed box size) */
+    int   adaptive_color; /* BGR input: 1 = at lock, track in the colour projection that
+                             best separates the target from its surroundings when that
+                             beats plain brightness (a red car on a brown field);
+                             0 = always brightness (default 1) */
 } tether_params;
 
 TETHER_API tether_params tether_default_params(void);
@@ -155,6 +159,8 @@ typedef struct {
     int   used_anchor;      /* LOST: 1 if this frame searched with the lock-time model */
     int   learned;          /* 1 if the appearance model was updated this frame */
     int   windows_tried;    /* correlation windows evaluated this frame */
+    float channel_gain;     /* lock: how much better the chosen channel separates the
+                               target than brightness (1 = brightness is used) */
 } tether_debug;
 
 TETHER_API tether_error tether_get_debug(const tether_tracker *t, tether_debug *out);
