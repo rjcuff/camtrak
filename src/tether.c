@@ -41,7 +41,7 @@
 /* Scale filter (scale.c): number of sizes sampled, and how fast it learns.
  * Slow learning keeps the size anchored to what the user selected. */
 #define TT_SCALE_SAMPLES 17
-#define TT_SCALE_LR      0.025f
+#define TT_SCALE_LR      0.01f
 /* Most the box size may change in one frame. Real objects change size
  * smoothly; sudden jumps come from clutter (a shadow, a tree) at the box edge. */
 #define TT_SCALE_MAX_CHANGE 0.025f
@@ -105,7 +105,7 @@ struct tether_tracker {
 
 const char *tether_version(void)
 {
-    return "0.3.0";
+    return "0.4.0";
 }
 
 /* ------------------------------------------------------------------ params */

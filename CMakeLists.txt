@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(tether VERSION 0.1.0 LANGUAGES C)
+project(tether VERSION 0.4.0 LANGUAGES C)
 
 # ---------------------------------------------------------------------------
 # Tether: CPU-only visual object tracker. Core is plain C11 + libm, nothing else.

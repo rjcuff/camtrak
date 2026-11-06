@@ -11,4 +11,6 @@ call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 cd /d "%~dp0"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release || exit /b 1
 cmake --build build || exit /b 1
+rem ship the core inside the Python package so `pip install .` includes it
+copy /y build\tether_c.dll python\tether\ >nul
 ctest --test-dir build --output-on-failure

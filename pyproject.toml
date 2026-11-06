@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tether-tracker"
+version = "0.4.0"
+description = "Fast CPU multi-object visual tracker: C core, Python API, auto-detect and a themeable HUD"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+# Pipeline, auto-detect, the HUD, the ML second opinion and the `tether` app need OpenCV
+vision = ["opencv-python>=4.9"]
+
+[project.scripts]
+tether = "tether.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "python" }
+packages = ["tether"]
+
+[tool.setuptools.package-data]
+# the compiled core, copied here by build.sh / build.bat
+tether = ["*.dylib", "*.so", "*.dll"]

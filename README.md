@@ -1,25 +1,147 @@
-# Tether
+# tether
 
-Fast, CPU-only visual object tracker. Draw a box around an object in the first
-frame; Tether follows it in every frame after that.
+**Fast, CPU-only tracking of many objects at once.** Point at objects (or let
+tether find them) and it follows each one through video, camera feeds and
+streams: an ID, a position, a speed and a confidence per object, every frame,
+in about half a millisecond per object.
 
-The core is plain C11 with no dependencies beyond the C standard library.
+* **C core**, plain C11, no dependencies, zero allocations per frame.
+* **Python API**: one `Pipeline` call per frame gives you plain data (JSON-ready)
+  and, if you want it, tether's own HUD drawn on the frame.
+* **The `tether` app**: files, image folders, webcams, RTSP/HTTP streams;
+  click to lock, auto-detect, CSV / JSON-lines output.
 
-## Status
+## Quick start
 
-| Phase | What | State |
-|---|---|---|
-| 1 | Project layout, radix-2 FFT, MOSSE correlation filter | done |
-| 2 | Peak-to-sidelobe ratio confidence, gated model update | done |
-| 3 | Constant-velocity Kalman filter, COASTING | done |
-| 4 | LOST after N misses, spiral re-detection, re-acquire | done |
-| 5 | Scale estimation (DSST-style scale filter) | done |
-| 5b | Scene-cut handling, clean "anchor" model for re-acquisition | done |
-| 6 | Colour model (veto look-alikes), ML second opinion (VitTrack), verify/reacquire API, run logs | done |
-| 7 | Multi-target (`MultiTracker`), click-to-lock, auto-detect small objects, targeting HUD with speed + close-up | done |
-| later | HOG/colour features, ONNX verifier, Python/Node bindings, OpenCV comparison bench | |
+```sh
+./build.sh test                         # build the C core (macOS / Linux) and run its tests
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[vision]"              # the tether package + the `tether` command
 
-## Build
+tether --source clip.mp4 --display      # click objects to lock them, space to play
+tether --source clip.mp4 --auto --display          # let tether find objects
+tether --source 0 --auto --display                 # webcam
+tether --source clip.mp4 --auto --output out.mp4 --jsonl out.jsonl
+```
+
+Without installing: `python demo/tether_hud.py` takes the same options.
+
+**In the window:** left click = lock the object under the cursor (box sized
+automatically; click a target to magnify it), left drag = lock that box,
+right click = drop a target, Tab = next target in the focus card, `t` = next
+colour theme, `x` = auto-detect on/off, `c` = drop all, space = pause (start,
+in the picker), `a`/`d` = choose the start frame, `q` = quit.
+
+## The tether look
+
+Every target gets its own colour, so a crowd stays readable:
+
+* **Box:** thin rounded outline with a centre ring. Solid = locked, dashed =
+  coasting (briefly unsure), grey dashed = searching (lost). The focused target
+  gets four lock ticks.
+* **Tag:** a short leader line (the tether) to a pill with the ID chip in the
+  target's colour and its speed. Tags avoid each other and the boxes; in a
+  crowd (> 20 targets) they shrink to the chip.
+* **Trail:** fading dots along each target's recent path.
+* **Focus card:** the focused target magnified with a reticle, its speed and a
+  confidence bar, placed in whichever corner has no targets.
+* **Status pill:** the tether mark and wordmark with live stats.
+
+Themes: `tether` (default: teal, violet, amber, sky, pink, lime, coral, sand
+on navy), `mono` (one accent, no trails), `contrast` (yellow / cyan / magenta
+on black, for bright or busy footage) and `light` (light panels). Pick with
+`--theme`, press `t` to cycle, or add your own:
+
+```python
+from tether.render import Theme, register_theme, hex_bgr
+register_theme(Theme("acme", palette=(hex_bgr("#FF5A1F"), hex_bgr("#1F8FFF")), accent=hex_bgr("#FF5A1F"),
+                     panel=hex_bgr("#111111"), panel_alpha=0.75, text=hex_bgr("#FFFFFF"),
+                     muted=hex_bgr("#999999"), chip_text=hex_bgr("#111111")))
+```
+
+## Use tether in your application
+
+```python
+import tether as tt
+
+src = tt.io.open_source("rtsp://camera/stream")   # file, folder, camera number or URL
+pipe = tt.Pipeline(fps=src.fps, auto=True)        # auto: find objects by itself
+pipe.add(first_frame, point=(640, 360))           # or box=(x, y, w, h); returns the ID
+
+while (frame := src.next()) is not None:
+    result = pipe.process(frame)                  # track everything
+    for t in result.targets:
+        t.id, t.label, t.box, t.center, t.speed, t.velocity, t.confidence
+    payload = result.to_dict()                    # JSON-ready, includes each target's colour
+    hud = pipe.render(frame, result)              # optional: the HUD on a copy of the frame
+```
+
+`examples/embed.py` is a complete 25-line app. Other ways in:
+
+* **Any language, no code:** `tether --source ... --jsonl -` streams one JSON
+  object per frame to stdout (`{"frame", "targets": [{"id", "state", "box",
+  "center", "velocity", "speed", "confidence", "color"}], "removed"}`); pipe it
+  into Node, Go, a web socket, a database.
+* **C / C++ / Rust / anything with a C FFI:** `include/tether/tether.h`, one
+  `tether_tracker` per object (see *Usage (C)* below).
+* **Lower-level Python:** `tt.Tracker` (one object), `tt.MultiTracker` (many,
+  with IDs and speeds), `tt.detect` (click-to-lock `snap_box`, `AutoDetector`),
+  `tt.Renderer` (draw the HUD on your own frames).
+
+The core needs only numpy; `Pipeline`, the detectors, the HUD and the app
+need OpenCV (`pip install -e ".[vision]"`).
+
+## How it finds and follows objects
+
+* **One tracker per object.** Each target has its own correlation-filter
+  tracker (0.2-0.6 ms), so dozens of targets stay real time; the first 4 you
+  pick also get a neural second opinion (VitTrack) when the model is present.
+* **Click-to-lock** grows a window around the click until the object fits,
+  treats the window's border colours as background, and boxes the blob under
+  the click. **Drawn boxes** that are clearly looser than the object inside
+  are tightened onto it (`--exact-boxes` to turn this off).
+* **Auto mode, plain backgrounds** (sky, snow, water): compact blobs that
+  stand out from a median-filtered background; clutter (tree lines, crowds,
+  cloud edges) is rejected.
+* **Auto mode, busy backgrounds** (terrain, streets, pitches): the camera's
+  motion is measured (features + RANSAC) and frames are aligned to cancel it;
+  what still moves is a candidate. New auto targets are on probation until
+  they move relative to the scenery, so trees and buildings are dropped and
+  their spots remembered.
+* **Colour:** at lock, each tracker picks the channel that best separates its
+  target from the surroundings: brightness, or a colour projection (Fisher
+  discriminant) when that is clearly better, e.g. a red car on a brown field
+  (`adaptive_color`, default on).
+* **Housekeeping:** auto targets are dropped when they leave the frame, stay
+  unconfirmed, or duplicate another target; yours are only dropped by you. At
+  a scene cut, auto targets are re-detected and yours search.
+
+## Numbers
+
+Synthetic clips with ground truth (`tools/make_sky_clip.py`,
+`tools/make_ground_clip.py`), scored with `tools/score_multi.py`; coverage =
+object-frames with a track within 15 px, 3 random seeds each:
+
+| Clip | Mode | Coverage | False track-frames | ID switches |
+|---|---|---|---|---|
+| sky: 10 aircraft and birds, clouds, tree line, panning | `--auto` | 97-98% | 0.4-0.5% | 0 |
+| sky | one click per object | 100% of clicked | 0.7% | 0 |
+| terrain: 8 vehicles, busy ground, panning/rotating/zooming camera | `--auto` | 73-89% | 12-25% | 1-7 |
+
+Single trackers locked on the exact vehicle boxes: 62-75% of frames within
+15 px with brightness only, 87-99% with the adaptive colour channel.
+
+Known weak spots: a box that starts much looser than the object can slowly
+grow into textured background (tightening drawn boxes helps but does not
+cure it; most false track-frames on terrain are such boxes on real
+vehicles), and near-invisible objects (a grey car on a grey road) get lost.
+
+Speed: 1080p, 24-cut, 66 s montage in `--auto`: 5-10 ms/frame for camera
+motion, detection and all targets (MacBook). `tests/test_multi.py` gates the
+numbers above; `tests/test_app.py` drives the app's window with scripted
+clicks and keys.
+
+## Build the core
 
 Requires CMake >= 3.16 and a C11 compiler.
 
@@ -43,91 +165,9 @@ Windows (Visual Studio 2022 or Build Tools with the C++ workload):
 build.bat
 ```
 
-## HUD: track many objects at once
+## Single-target demo and benchmarks
 
-`demo/tether_hud.py` tracks any number of objects and draws a targeting
-overlay: corner brackets, a centre dot, and a panel per target with
-`TRK ID: n [LOCKED]`, its position and its speed in px/s, plus a magnified
-close-up of one target in the bottom-right corner. Red = LOCKED, amber =
-COASTING, grey = SEARCHING.
-
-```sh
-# pick targets yourself: click an object to lock it (box sized automatically), or drag a box
-python demo/tether_hud.py --source clip.mp4 --display
-
-# let it find small objects against sky / snow by itself (aircraft, birds, drones, skiers)
-python demo/tether_hud.py --source airshow.mp4 --auto --display
-
-# unattended: save the annotated video and a per-target CSV
-python demo/tether_hud.py --source clip.mp4 --auto --output out.mp4 --csv out.csv
-python demo/tether_hud.py --source clip.mp4 --point 640,360 --bbox 100,80,40,30 --output out.mp4
-```
-
-**In the window** (before playback and while playing): left click = lock the
-object under the cursor; left drag = lock exactly that box; right click = drop
-a target; Tab = choose which target the close-up shows; `x` = auto-detect
-on/off; `c` = drop all; space = pause (and start, in the picker); `a`/`d` =
-pick the start frame; `q` = quit. You can add targets at any moment, paused or
-not.
-
-**How it works.** Each target has its own Tether tracker (0.2-0.6 ms each),
-so dozens of targets stay real time; the first 4 targets you pick also get the
-ML second opinion. *Click-to-lock* (`demo/detect.py: snap_box`) grows a window
-around the click until the object fits, treats the window's border colours as
-background, and boxes the blob under the click. *Auto mode*
-(`BlobDetector`) subtracts a median-filtered background, keeps compact
-blobs that stand out from a plain surrounding (tree lines, crowds and cloud
-edges are rejected as clutter), and spawns a target only when a blob is seen
-on two passes in a row. Auto targets are dropped when they leave the frame,
-stay unconfirmed for 1 s, or land on an object that is already tracked; your
-own targets are never dropped. At a scene cut, auto targets are cleared and
-re-detected, and yours start searching.
-
-**Busy backgrounds.** On textured ground (vehicles seen from a drone, people
-on a pitch) "stands out" is not enough: every tree does. Auto mode then
-measures the camera's motion (features + RANSAC), finds things that move
-relative to the scene (`MotionDetector`: frames aligned to cancel the camera,
-current frame compared with two earlier ones), and puts every new auto
-target on probation: it is only shown once it has moved relative to the
-scenery; one that moves with the camera is a tree or a building and is
-dropped, and that spot is remembered.
-
-**Colour.** The correlation tracker sees one channel. Brightness alone loses
-colour contrast (a red car on a brown field has about the same brightness),
-so at lock time Tether compares brightness with the colour projection that
-best separates the target from its surroundings (Fisher discriminant) and
-tracks in that when it is clearly better (`adaptive_color`, default on).
-
-Synthetic clips with ground truth, scored with `tools/score_multi.py`
-(coverage = object-frames with a track within 15 px):
-
-| Clip | Mode | Coverage | False track-frames | ID switches |
-|---|---|---|---|---|
-| sky, 10 aircraft/birds, 3 seeds (`tools/make_sky_clip.py`) | `--auto` | 97-98% | 0.4-0.5% | 0 |
-| sky | one click per object | 100% of clicked | 0.7% | 0 |
-| aerial terrain, 8 vehicles, moving camera, 3 seeds (`tools/make_ground_clip.py`) | `--auto` | 73-86% | 12-29% | 1-7 |
-
-Tracking from exact boxes on the terrain clips: 62-75% of frames within
-15 px with brightness only, 86-98% with the adaptive colour channel.
-Known weak spot: a box that starts looser than the object can slowly grow
-into the background (most of the false track-frames on terrain are such
-boxes on real vehicles).
-
-On a 66 s, 1080p, 24-cut montage (jets, bikes, F1, skiers, birds) `--auto`
-costs 5-10 ms/frame for camera motion + tracking. `python tests/test_multi.py`
-gates these numbers.
-
-```python
-import tether as tt
-mt = tt.MultiTracker(fps=30)
-a = mt.add(frame, (x, y, w, h))              # returns the ID
-for t in mt.update(next_frame):
-    print(t.id, t.label, t.center, t.speed)  # LOCKED / COASTING / SEARCHING, px/s
-```
-
-## Demo: track a video
-
-Needs Python 3 with `numpy` and `opencv-python` (OpenCV is used only by the demo).
+Needs Python 3 with `numpy` and `opencv-python`.
 
 ```sh
 # make a synthetic test clip (prints the first-frame box)
@@ -189,7 +229,7 @@ For your own videos (no ground truth), use `--select-target --display`.
 ## Usage (Python)
 
 ```python
-import tether as tt          # python/ on sys.path; temporary ctypes binding
+import tether as tt          # after pip install -e . (or python/ on sys.path)
 
 trk = tt.Tracker()
 trk.lock(first_frame, (x, y, w, h))      # numpy uint8, gray or BGR
@@ -223,16 +263,24 @@ Every function that can fail returns a `tether_error` (`TETHER_OK` = 0).
 ## Layout
 
 ```
-include/tether/tether.h   public API (opaque handle)
-src/fft.[ch]              radix-2 1D/2D FFT with precomputed plans
-src/patch.[ch]            patch sampling (bilinear, gray/BGR), log + normalise + cosine window
-src/mosse.[ch]            MOSSE filter: train, update, respond, sub-pixel peak
-src/tether.c              tracker state and the per-frame pipeline
-tests/                    FFT vs naive DFT, API validation, synthetic tracking + speed,
-                          test_multi.py (multi-target / auto / click-to-lock gate)
-python/tether/multi.py    MultiTracker: many targets, IDs, speeds, pruning
-demo/tether_hud.py        multi-target app with the targeting HUD
-demo/hud.py, detect.py    HUD drawing; click-to-lock and auto-detect
+include/tether/tether.h       public C API (opaque handle)
+src/fft.[ch]                  radix-2 1D/2D FFT with precomputed plans
+src/patch.[ch]                patch sampling (bilinear, gray/BGR), adaptive colour channel,
+                              log + normalise + cosine window
+src/mosse.[ch], scale.[ch]    correlation filter; DSST-style size filter
+src/tether.c                  tracker state and the per-frame pipeline
+python/tether/__init__.py     ctypes binding: Tracker, Result
+python/tether/multi.py        MultiTracker: many targets, IDs, speeds, probation, pruning
+python/tether/detect.py       click-to-lock, box tightening, auto-detect, camera motion, scene cuts
+python/tether/pipeline.py     Pipeline: everything per frame, FrameResult.to_dict()
+python/tether/render.py       the tether HUD and themes
+python/tether/io.py           files, folders, cameras, streams
+python/tether/cli.py          the `tether` app
+examples/embed.py             tether inside your own app
+demo/                         single-target demo, benchmark helpers, tether_hud.py (= `tether`)
+tools/                        synthetic clips with ground truth, scoring
+tests/                        C: FFT, API, synthetic tracking + speed;
+                              Python: test_multi.py (accuracy gate), test_app.py (window, scripted)
 ```
 
 ## How the tracker decides TRACKING / COASTING / LOST

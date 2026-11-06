@@ -8,6 +8,7 @@ CC=${CC:-cc}
 CFLAGS="-O2 -std=c11 -Wall -Wextra -Wpedantic -Iinclude -Isrc"
 case "$(uname)" in Darwin) LIB=libtether_c.dylib ;; *) LIB=libtether_c.so ;; esac
 $CC $CFLAGS -shared -fPIC -fvisibility=hidden -DTETHER_SHARED -DTETHER_BUILDING src/*.c -o build/$LIB -lm
+cp build/$LIB python/tether/$LIB      # so `pip install .` ships the core with the package
 $CC $CFLAGS -Itests tests/test_fft.c src/*.c -o build/test_fft -lm
 $CC $CFLAGS -Itests tests/test_api.c src/*.c -o build/test_api -lm
 $CC $CFLAGS -Itests tests/test_mosse.c tests/synth.c src/*.c -o build/test_mosse -lm

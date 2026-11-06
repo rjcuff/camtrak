@@ -21,6 +21,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from tether.detect import CutDetector  # noqa: F401  (re-exported for the demos)
+
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
 GT_NAMES = ("groundtruth_rect.txt", "groundtruth.txt", "groundtruth_rect.1.txt")
 Box = tuple[float, float, float, float]
@@ -102,38 +104,6 @@ def load_groundtruth(path: Path) -> list[Box | None]:
         else:
             boxes.append((values[0], values[1], values[2], values[3]))
     return boxes
-
-
-class CutDetector:
-    """
-    Flags hard cuts in edited video: a big jump in the colour histogram between
-    consecutive frames. Works on a 160 px wide thumbnail, so it is cheap at any
-    resolution. Threshold tuned on drone ski footage (cuts scored 0.27-0.84).
-    """
-
-    def __init__(self, threshold: float = 0.25, min_gap: int = 5) -> None:
-        self.threshold = threshold
-        self.min_gap = min_gap
-        self._prev = None
-        self._since = min_gap
-
-    def reset(self) -> None:
-        self._prev = None
-        self._since = self.min_gap
-
-    def is_cut(self, img: np.ndarray) -> bool:
-        thumb = cv2.resize(img, (160, max(1, 160 * img.shape[0] // img.shape[1])))
-        hist = cv2.calcHist([cv2.cvtColor(thumb, cv2.COLOR_BGR2HSV)], [0, 1], None,
-                            [32, 32], [0, 180, 0, 256])
-        cv2.normalize(hist, hist)
-        cut = False
-        self._since += 1
-        if self._prev is not None and self._since >= self.min_gap:
-            cut = cv2.compareHist(self._prev, hist, cv2.HISTCMP_BHATTACHARYYA) > self.threshold
-            if cut:
-                self._since = 0
-        self._prev = hist
-        return cut
 
 
 def load_absent_flags(source: Path, n: int) -> list[bool]:

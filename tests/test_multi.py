@@ -22,9 +22,9 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(ROOT / "python"), str(ROOT / "demo")]
+sys.path[:0] = [str(ROOT / "python")]
 import tether as tt  # noqa: E402
-from detect import snap_box  # noqa: E402
+from tether.detect import snap_box  # noqa: E402
 
 
 def run(*args: str) -> str:

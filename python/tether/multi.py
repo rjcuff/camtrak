@@ -289,10 +289,18 @@ class MultiTracker:
             if a.id not in self._targets:
                 continue
             for b in live[i + 1:]:
-                if b.id in self._targets and b.source == "auto" \
-                        and iou(a.box, b.box) > self.duplicate_iou:
+                if b.id in self._targets and b.source == "auto" and self._same_object(a, b):
                     self.removed.append((b.id, "duplicate", b.box))
                     self.remove(b.id)
+
+    def _same_object(self, a: Target, b: Target) -> bool:
+        """Boxes overlap a lot, or the centres nearly coincide (a loose and a
+        tight box on one object can have a low IoU)."""
+        if iou(a.box, b.box) > self.duplicate_iou:
+            return True
+        (ax, ay), (bx, by) = a.center, b.center
+        near = 0.35 * min(max(a.box[2], a.box[3]), max(b.box[2], b.box[3]))
+        return float(np.hypot(ax - bx, ay - by)) < near
 
     def close(self) -> None:
         self.clear()

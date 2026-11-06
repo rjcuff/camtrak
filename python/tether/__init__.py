@@ -7,8 +7,13 @@ tether - Python interface to the Tether C tracker.
     r = trk.update(next_frame)
     print(r.box, r.confidence, r.status)
 
-This is a temporary ctypes binding so the demo can run today. It will be
-replaced by compiled bindings (pybind11/CFFI) with the same interface.
+Higher level (needs OpenCV): tether.Pipeline (multi-target tracking,
+auto-detect, HUD in one call per frame), tether.io.open_source (files,
+folders, cameras, streams), tether.Renderer and THEMES (the HUD), and the
+`tether` command (tether.cli).
+
+The core binding uses ctypes; it will be replaced by compiled bindings
+(pybind11/CFFI) with the same interface.
 
 The shared library is found via the TETHER_LIBRARY environment variable, or
 next to this package, or in ../../build.
@@ -23,7 +28,8 @@ from pathlib import Path
 
 import numpy as np
 
-__all__ = ["Tracker", "MLTracker", "MultiTracker", "Target", "Result", "TRACKING", "COASTING", "LOST", "TetherError"]
+__all__ = ["Tracker", "MLTracker", "MultiTracker", "Target", "Pipeline", "FrameResult",
+           "Renderer", "THEMES", "Result", "TRACKING", "COASTING", "LOST", "TetherError"]
 
 TRACKING, COASTING, LOST = 0, 1, 2
 _STATUS_NAMES = {TRACKING: "TRACKING", COASTING: "COASTING", LOST: "LOST"}
@@ -232,4 +238,19 @@ class Tracker:
 
 from .ml import MLTracker  # noqa: E402  (needs OpenCV only when used)
 from .multi import MultiTracker, Target  # noqa: E402
+
+
+def __getattr__(name: str):
+    """Pipeline / Renderer / THEMES need OpenCV; import them only when used,
+    so the core tracker works with numpy alone."""
+    if name in ("Pipeline", "FrameResult"):
+        from . import pipeline
+        return getattr(pipeline, name)
+    if name in ("Renderer", "THEMES", "Theme", "register_theme"):
+        from . import render
+        return getattr(render, name)
+    if name in ("io", "detect", "render", "pipeline", "cli"):
+        import importlib
+        return importlib.import_module(f".{name}", __name__)
+    raise AttributeError(f"module 'tether' has no attribute {name!r}")
 

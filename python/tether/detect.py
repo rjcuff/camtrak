@@ -1,5 +1,5 @@
 """
-detect - find objects without the user drawing a box.
+tether.detect - find objects without the user drawing a box.
 
 snap_box(frame, x, y)
     Click-to-lock. Finds the object under (or next to) a click and returns a
@@ -15,6 +15,9 @@ BlobDetector
     lines, cloud edges, crowds) where everything stands out. A detection only
     becomes a target after it is seen again, close by, on a later pass.
 
+CutDetector
+    Flags hard cuts in edited video (colour histogram jump).
+
 GlobalMotion / MotionDetector / AutoDetector
     Camera-motion estimate (features + RANSAC affine), and a detector for
     objects that move relative to the scene on busy backgrounds (vehicles on
@@ -23,7 +26,7 @@ GlobalMotion / MotionDetector / AutoDetector
     from both is a mover. AutoDetector combines both detectors and remembers
     places that turned out to be scenery.
 
-OpenCV + numpy only; this is demo-side code, not part of the C core.
+Needs OpenCV + numpy (the C core does not).
 """
 
 from __future__ import annotations
@@ -116,6 +119,25 @@ def snap_box(frame: np.ndarray, x: float, y: float, *, min_side: float = 12,
     if best_box is not None:
         return _pad(best_box, 0.0, min_side, frame.shape)
     return _pad((x - fallback / 2, y - fallback / 2, fallback, fallback), 0.0, min_side, frame.shape)
+
+
+def refine_box(frame: np.ndarray, box: Box, *, pad: float = 0.1) -> Box:
+    """
+    Tighten a hand-drawn box onto the object inside it. A loose box carries
+    background into the tracker's model, and the size estimate can then creep
+    outwards into that background. Returns the original box when no clear
+    single object is found inside it.
+    """
+    x, y, w, h = box
+    s = snap_box(frame, x + w / 2, y + h / 2, max_half=int(max(w, h)) + 10)
+    sx0, sy0, sx1, sy1 = s[0], s[1], s[0] + s[2], s[1] + s[3]
+    ix = max(0.0, min(sx1, x + w) - max(sx0, x))
+    iy = max(0.0, min(sy1, y + h) - max(sy0, y))
+    inside = ix * iy / max(1.0, s[2] * s[3])          # share of the snapped box inside the drawn one
+    share = s[2] * s[3] / max(1.0, w * h)             # snapped area relative to the drawn one
+    if inside >= 0.85 and 0.15 <= share <= 0.8:
+        return _pad(s, pad, 8, frame.shape)
+    return box
 
 
 class BlobDetector:
@@ -419,3 +441,35 @@ class AutoDetector:
                 continue
             merged.append(b)
         return merged
+
+
+class CutDetector:
+    """
+    Flags hard cuts in edited video: a big jump in the colour histogram between
+    consecutive frames. Works on a 160 px wide thumbnail, so it is cheap at any
+    resolution. Threshold tuned on drone ski footage (cuts scored 0.27-0.84).
+    """
+
+    def __init__(self, threshold: float = 0.25, min_gap: int = 5) -> None:
+        self.threshold = threshold
+        self.min_gap = min_gap
+        self._prev = None
+        self._since = min_gap
+
+    def reset(self) -> None:
+        self._prev = None
+        self._since = self.min_gap
+
+    def is_cut(self, img: np.ndarray) -> bool:
+        thumb = cv2.resize(img, (160, max(1, 160 * img.shape[0] // img.shape[1])))
+        hist = cv2.calcHist([cv2.cvtColor(thumb, cv2.COLOR_BGR2HSV)], [0, 1], None,
+                            [32, 32], [0, 180, 0, 256])
+        cv2.normalize(hist, hist)
+        cut = False
+        self._since += 1
+        if self._prev is not None and self._since >= self.min_gap:
+            cut = cv2.compareHist(self._prev, hist, cv2.HISTCMP_BHATTACHARYYA) > self.threshold
+            if cut:
+                self._since = 0
+        self._prev = hist
+        return cut
