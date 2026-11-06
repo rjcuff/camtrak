@@ -1,0 +1,7 @@
+build/
+logs/
+clips/
+*.obj
+*.o
+__pycache__/
+*.pyc
